@@ -1,0 +1,6 @@
+- [x] Implement Phase 2: Tool System & MCP Integration
+  - [x] Design Tool decorator and registry
+  - [x] Implement basic local tools (Time, Calculator)
+  - [x] Update UI to show tool execution status
+  - [x] Implement persistent settings system (user_settings.json)
+  - [x] Refine UI: Reasoning display with toggle, Auto-scroll

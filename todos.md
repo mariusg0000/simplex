@@ -1,0 +1,8 @@
+- [ ] Phase 3: Office Skills & MCP Integration
+  - [ ] Implement MCP Client for standardized tool access
+  - [ ] Implement 'File Search' tool (Local)
+  - [ ] Implement 'Document Reader' (PDF, Docx)
+  - [ ] Implement 'Data Analysis' tool (Pandas)
+- [ ] Phase 4: Security & Packaging
+  - [ ] Add support for local models (Ollama)
+  - [ ] Build process for .exe/binary
