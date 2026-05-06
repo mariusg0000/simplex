@@ -9,7 +9,7 @@ from src.config import settings
 
 from src.storage import storage
 from src.engine.tools import tool
-from src.engine.file_search import intelligent_file_search
+from src.engine.file_search import file_search, list_directory
 from src.engine.doc_reader import read_document_content
 
 # --- Example Tools ---

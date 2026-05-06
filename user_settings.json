@@ -1,5 +1,7 @@
 {
   "show_reasoning": true,
   "dark_mode": false,
-  "working_directories": []
+  "working_directories": [
+    "/mnt/DATA/Work/AI/"
+  ]
 }

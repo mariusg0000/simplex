@@ -85,95 +85,167 @@ def _is_excluded(path: str) -> bool:
     name = os.path.basename(path)
     return name in EXCLUDE_DIRS
 
-def _search_in_dir_logic(directory: str, pattern: str, visited: Set[str], max_hits: int = 50) -> List[str]:
-    """Internal search logic (case-insensitive glob)."""
+def _search_in_dir_logic(directory: str, search_units: List[List[str]], visited: Set[str], max_hits: int = 200) -> List[str]:
+    """Internal search logic (matches ALL keywords in ANY search unit)."""
     matches = []
     directory = str(Path(directory).absolute())
     if directory in visited:
         return []
     
     visited.add(directory)
-    pattern_lower = pattern.lower()
     
     try:
+        # Increase performance by using a faster walk or limit check
         for root, dirs, files in os.walk(directory, topdown=True):
             dirs[:] = [d for d in dirs if not _is_excluded(os.path.join(root, d))]
             
-            for filename in files:
-                if fnmatch.fnmatch(filename.lower(), pattern_lower):
-                    matches.append(os.path.join(root, filename))
-                
-                if len(matches) >= max_hits:
-                    return matches
+            # Prioritize folders for faster discovery of archives/projects
+            for name in dirs:
+                full_path = os.path.join(root, name)
+                path_lower = full_path.lower()
+                for unit in search_units:
+                    if all(kw.lower() in path_lower for kw in unit):
+                        matches.append(full_path)
+                        break
+                if len(matches) >= max_hits: return matches
+
+            for name in files:
+                full_path = os.path.join(root, name)
+                path_lower = full_path.lower()
+                for unit in search_units:
+                    if all(kw.lower() in path_lower for kw in unit):
+                        matches.append(full_path)
+                        break
+                if len(matches) >= max_hits: return matches
     except PermissionError:
         pass
     
     return matches
 
 @tool
-async def intelligent_file_search(query: str, keywords: List[str], suggested_dir: Optional[str] = None) -> str:
+async def file_search(query: str, keywords: List[str] = None) -> str:
     """
-    Search for files strictly within the user-configured working directories.
-    
-    CRITICAL USAGE:
-    - USE ONLY ONE broad keyword (e.g. 'rag').
-    - IF YOU GET RESULTS, STOP SEARCHING. Present those results.
-    - DO NOT try variations of the same query. The internal Reranker already optimized the list for you.
+    Search for files and folders strictly within the user-configured working directories.
+    Matches ALL keywords in the full path (AND logic).
 
     PARAMS:
-    query: str - A SINGLE, broad keyword.
-    keywords: List[str] - Contextual tags.
-    suggested_dir: Optional[str] - Ignored (uses persistent working directories).
+    query: str - The main search term (can be a filename).
+    keywords: List[str] - Up to 6 keywords to match in the path.
     """
     # 1. Get configured directories
     work_dirs = storage.prefs.working_directories
     if not work_dirs:
-        return "No working directories configured. Please add folders in the Settings menu (gear icon)."
+        return "No working directories configured. Please add folders in the Settings menu."
 
-    # 2. Normalize query
-    query = query.strip()
-    if " " in query and not ("*" in query or "?" in query):
-        search_pattern = "*" + "*".join(query.split()) + "*"
-    elif "*" not in query and "?" not in query:
-        search_pattern = f"*{query}*"
-    else:
-        search_pattern = query
-
-    print(f"[DEBUG] Strict Search started: pattern='{search_pattern}' in {work_dirs}")
+    # 2. Prepare the keyword list (query + keywords)
+    search_keywords = []
+    if query:
+        search_keywords.extend(query.lower().split())
+    if keywords:
+        if isinstance(keywords, str):
+            search_keywords.extend(keywords.lower().split())
+        else:
+            search_keywords.extend([kw.lower() for kw in keywords])
     
-    if isinstance(keywords, str):
-        keywords = [keywords]
+    # Deduplicate and limit to 6
+    search_keywords = list(set(search_keywords))[:6]
+    
+    print(f"[DEBUG] Search started with keywords: {search_keywords}")
 
     visited_dirs = set()
     raw_results = []
     
-    async def run_search(path: str, limit: int = 50):
-        return await to_thread.run_sync(_search_in_dir_logic, path, search_pattern, visited_dirs, limit)
+    # We use a single search unit containing all keywords (AND logic)
+    search_units = [search_keywords]
+    
+    async def run_search(path: str, units: List[List[str]], limit: int = 200):
+        return await to_thread.run_sync(_search_in_dir_logic, path, units, visited_dirs, limit)
 
-    # 3. Search strictly in each configured directory
+    # 3. Search in each configured directory
     for folder in work_dirs:
         if os.path.exists(folder):
-            results = await run_search(folder)
+            results = await run_search(folder, search_units)
             raw_results.extend(results)
 
     if raw_results:
         unique_results = list(set(raw_results))
         
-        # Sort by modification time (Recent First)
+        # Sort by modification time
         try:
             unique_results.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
         except:
             pass
 
-        if len(unique_results) == 1:
-            print(f"[DEBUG] Only one result found. Skipping Reranker.")
-            best_matches = unique_results
-        else:
-            print(f"[DEBUG] Invoking Reranker Agent on {len(unique_results)} candidates...")
-            reranker = RerankerAgent()
-            best_matches = await reranker.rerank_files(query, unique_results)
+        # Use Reranker for the final selection (max 10)
+        print(f"[DEBUG] Invoking Reranker on {len(unique_results)} candidates...")
+        reranker = RerankerAgent()
+        best_matches = await reranker.rerank_files(query, unique_results)
         
         if best_matches:
-            return "Found relevant files in your working directories:\n" + "\n".join(best_matches)
+            return "Found relevant files/folders:\n" + "\n".join(best_matches)
     
-    return f"No files matching '{query}' were found in your configured working directories."
+    return f"No results for {search_keywords} found. Please try different keywords."
+
+@tool
+async def list_directory(path: str) -> str:
+    """
+    List all files and sub-directories inside a given folder path.
+    Use this to see what's inside a folder found by file_search.
+
+    PARAMS:
+    path: str - The absolute path to the directory to list.
+    """
+    import os
+    from datetime import datetime
+    
+    print(f"[DEBUG] list_directory call received for path: {path}")
+    target_path = Path(path).absolute()
+    
+    # Security: Ensure path is within working directories
+    work_dirs = [Path(d).absolute() for d in storage.prefs.working_directories]
+    print(f"[DEBUG] Validating {target_path} against {work_dirs}")
+    is_safe = False
+    for wd in work_dirs:
+        if target_path == wd or target_path.is_relative_to(wd):
+            is_safe = True
+            break
+    
+    if not is_safe:
+        print(f"[DEBUG] list_directory Access Denied: {target_path} not in {work_dirs}")
+        return f"Access Denied: Path '{path}' is outside your configured working directories."
+
+    print(f"[DEBUG] list_directory executing for: {target_path}")
+
+    if not target_path.exists():
+        return f"Error: Path '{path}' does not exist."
+    
+    if not target_path.is_dir():
+        return f"Error: Path '{path}' is a file, not a directory. Use read_document_content to read it."
+
+    try:
+        output = [f"Contents of {target_path}:\n"]
+        items = sorted(os.listdir(target_path))
+        
+        if not items:
+            return f"Directory '{path}' is empty."
+
+        for item in items:
+            if item.startswith('.') and item not in {'.env'}:
+                continue
+                
+            full_item_path = target_path / item
+            try:
+                stats = full_item_path.stat()
+                mtime = datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M')
+                
+                if full_item_path.is_dir():
+                    output.append(f"[DIR]  {item}/")
+                else:
+                    size_kb = stats.st_size / 1024
+                    output.append(f"[FILE] {item} ({size_kb:.1f} KB) - Modified: {mtime}")
+            except Exception:
+                output.append(f"[?]    {item} (Permission Denied)")
+                
+        return "\n".join(output)
+    except Exception as e:
+        return f"Error listing directory: {str(e)}"

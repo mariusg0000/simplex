@@ -46,7 +46,7 @@ class RerankerAgent(SubAgent):
                 "You are an expert File System Analyst. Your task is to look at a list of raw file paths "
                 "and select the most relevant ones based on the user's search context.\n"
                 "RULES:\n"
-                "1. Return a comma-separated list of ONLY the best paths (max 5).\n"
+                "1. Return a comma-separated list of ONLY the best paths (max 10).\n"
                 "2. Prioritize files that look like source documents, code, or data (PDF, DOCX, MD, PY, CSV).\n"
                 "3. Ignore temporary, cache, or build-related files if others are available.\n"
                 "4. If nothing seems relevant, return 'NONE'.\n"
@@ -66,4 +66,4 @@ class RerankerAgent(SubAgent):
             
         # Parse comma-separated or newline-separated paths
         cleaned_paths = [p.strip().strip("'\"") for p in result.replace("\n", ",").split(",") if p.strip()]
-        return cleaned_paths[:5]
+        return cleaned_paths[:10]

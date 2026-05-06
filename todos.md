@@ -1,4 +1,5 @@
 - [ ] Phase 3: Office Skills & Advanced Features
+  - [x] Implement 'list_directory' tool (ls functionality)
   - [ ] Implement MCP Client for standardized tool access
   - [ ] Implement 'Data Analysis' tool (Pandas for XLSX/CSV)
   - [ ] Implement 'Email Drafter' (Outlook/Gmail connection)
