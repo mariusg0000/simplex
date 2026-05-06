@@ -15,7 +15,7 @@ Simplex AI is designed to hide technical complexity behind a friendly graphical 
 ## 🚀 Key Features
 
 ### 💻 Native Desktop Experience
-*   **Standalone Window:** Runs as a native desktop application (via PySide6/WebView), not just in a browser.
+*   **Standalone Window:** Runs as a native desktop application using NiceGUI's native mode (built on top of WebView/Qt via internal handlers), providing a seamless experience.
 *   **Modern UI:** Built with NiceGUI/Vue for a responsive and intuitive chat experience.
 *   **Persistent Settings:** Remembers your working directories and UI preferences across restarts.
 
@@ -38,7 +38,7 @@ Simplex AI is designed to hide technical complexity behind a friendly graphical 
 *   **Package Manager:** [uv](https://github.com/astral-sh/uv) (Extremely fast Python package installer)
 *   **UI Framework:** [NiceGUI](https://nicegui.io/)
 *   **LLM Integration:** [LiteLLM](https://github.com/BerriAI/litellm)
-*   **Desktop Wrapper:** [pywebview](https://pywebview.flowrl.com/) + PySide6
+*   **Desktop Wrapper:** NiceGUI (Native Mode)
 *   **Data Processing:** Pandas, PyPDF, python-docx
 
 ---
