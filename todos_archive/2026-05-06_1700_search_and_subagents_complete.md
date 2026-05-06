@@ -1,0 +1,6 @@
+- [x] Phase 3: Office Skills & Sub-agents Foundation
+  - [x] Implement Intelligent File Search Tool (Strict Mode)
+  - [x] Implement Sub-agent architecture (Base class & Reranker)
+  - [x] Implement 'Document Reader' tool (PDF, Docx, Xlsx, Text)
+  - [x] Refine UI: Focused search settings, aggressive Markdown normalization
+  - [x] Implement Settings Dialog for working directories
