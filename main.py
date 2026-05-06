@@ -9,6 +9,8 @@ from src.config import settings
 
 from src.storage import storage
 from src.engine.tools import tool
+from src.engine.file_search import intelligent_file_search
+from src.engine.doc_reader import read_document_content
 
 # --- Example Tools ---
 @tool
@@ -28,7 +30,18 @@ def calculator(expression: str):
 # --- End Example Tools ---
 
 # State management for the chat
-messages = [{"role": "system", "content": settings.system_prompt}]
+messages = [
+    {
+        "role": "system", 
+        "content": settings.system_prompt + (
+            "\n\nSTRATEGIC GUIDELINES:\n"
+            "1. BE EFFICIENT: Do not perform more than 2 search attempts for the same request.\n"
+            "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
+            "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
+            "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates."
+        )
+    }
+]
 active_task: asyncio.Task = None
 
 async def handle_preference_change(e):
@@ -184,7 +197,86 @@ async def process_response(thinking_indicator: ui.element):
 
 # UI Layout
 def init_ui():
+    # Force text selection and normalize Markdown styling
+    ui.add_head_html("""
+        <style>
+            /* Selection and basic text */
+            .q-message-text, .q-markdown, .q-markdown * {
+                user-select: text !important;
+                -webkit-user-select: text !important;
+            }
+            
+            /* Normalized Markdown - GitHub Style - Aggressive Normalization */
+            .q-markdown {
+                font-size: 14px !important;
+                line-height: 1.5 !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif !important;
+            }
+            .q-markdown h1, .q-markdown h2, .q-markdown h3, 
+            .q-markdown h4, .q-markdown h5, .q-markdown h6 {
+                margin-top: 12px !important;
+                margin-bottom: 4px !important;
+                font-weight: 600 !important;
+                line-height: 1.25 !important;
+                color: #24292e !important;
+                border-bottom: none !important;
+            }
+            .q-markdown h1 { font-size: 1.25em !important; margin-top: 0 !important; }
+            .q-markdown h2 { font-size: 1.15em !important; }
+            .q-markdown h3 { font-size: 1.05em !important; }
+            .q-markdown h4 { font-size: 1em !important; }
+            
+            .q-markdown p { margin-bottom: 8px !important; }
+            
+            /* Code blocks */
+            .q-markdown pre {
+                background-color: #f6f8fa;
+                border-radius: 6px;
+                padding: 16px;
+                overflow: auto;
+                font-family: 'Fira Code', 'Cascadia Code', monospace;
+                font-size: 85%;
+                border: 1px solid #d1d5da;
+            }
+        </style>
+    """)
+    
     ui.query('body').classes('bg-slate-50')
+
+    # Settings Dialog
+    with ui.dialog() as settings_dialog, ui.card().classes('w-96 p-4'):
+        ui.label('Settings').classes('text-xl font-bold mb-2')
+        ui.label('Working Directories').classes('text-sm font-semibold text-gray-500 mb-1')
+        
+        folders_container = ui.column().classes('w-full gap-1 mb-4')
+        
+        def refresh_folders():
+            folders_container.clear()
+            for path in storage.prefs.working_directories:
+                with folders_container, ui.row().classes('w-full items-center justify-between bg-gray-100 p-2 rounded'):
+                    ui.label(path).classes('text-xs truncate flex-grow')
+                    ui.button(icon='delete', on_click=lambda p=path: remove_folder(p)).props('flat round dense color=red size=sm')
+        
+        def remove_folder(path):
+            storage.prefs.working_directories.remove(path)
+            storage.save()
+            refresh_folders()
+            
+        def add_folder():
+            path = new_folder_input.value.strip()
+            if path and path not in storage.prefs.working_directories:
+                storage.prefs.working_directories.append(path)
+                storage.save()
+                new_folder_input.value = ''
+                refresh_folders()
+        
+        refresh_folders()
+        
+        with ui.row().classes('w-full gap-2 items-center'):
+            new_folder_input = ui.input(placeholder='Add folder path...').classes('flex-grow').props('outlined dense')
+            ui.button(icon='add', on_click=add_folder).props('flat round color=primary')
+            
+        ui.button('Close', on_click=settings_dialog.close).classes('w-full mt-4')
 
     with ui.column().classes("w-full max-w-3xl mx-auto p-4 h-screen items-stretch"):
         with ui.row().classes("w-full items-center justify-between mb-4"):
@@ -192,13 +284,16 @@ def init_ui():
                 ui.label("Simplex AI").classes("text-3xl font-bold text-primary")
                 ui.badge("v1.0.0 (NiceGUI Native)").classes("p-2")
             
-            # Feature toggle
-            global show_reasoning_checkbox
-            show_reasoning_checkbox = ui.checkbox(
-                "Show Reasoning", 
-                value=storage.prefs.show_reasoning,
-                on_change=handle_preference_change
-            ).classes("text-xs text-gray-500")
+            with ui.row().classes("items-center gap-2"):
+                # Settings button
+                ui.button(icon='settings', on_click=settings_dialog.open).props('flat round color=gray')
+                # Feature toggle
+                global show_reasoning_checkbox
+                show_reasoning_checkbox = ui.checkbox(
+                    "Show Reasoning", 
+                    value=storage.prefs.show_reasoning,
+                    on_change=handle_preference_change
+                ).classes("text-xs text-gray-500")
         
         # Reliable scroll area
         global scroll_area, chat_content

@@ -82,18 +82,26 @@ RETURNS: [type — meaning]          (or "none")
 - Archive: `todos_archive/` at project root (create if missing).
 - Archive filename: `YYYY-MM-DD_HHMM_<short_snake_case>.md` (filesystem-safe, no colons/spaces).
 
-### 11.2 New request detected when
-The user message introduces a new goal unrelated to the currently open task, OR explicitly starts a new one, OR the previous top-level task is fully `- [x]`. If unsure, ask.
+### 11.2 Context Switch & Abandoned Tasks (CRITICAL)
+A new request is detected when the user message introduces a new goal unrelated to the currently open task, explicitly starts a new one, OR the previous top-level task is fully `- [x]`.
+
+**BEFORE planning or starting the new request**, you MUST check the state of `todos.md`. If there are unarchived `- [x]` tasks or abandoned `- [ ]` tasks from a previous session:
+1. **STOP.** Do not start analyzing or planning the newly requested task.
+2. Output a proposal to:
+   - Archive the completed/abandoned tasks into `todos_archive/`.
+   - Perform a `git commit` to save the previous state (suggesting a concise commit message based on the old tasks).
+3. Wait for explicit user approval (e.g., `ok`, `commit and archive`).
+4. Only after executing the archive and commit successfully, proceed to step 11.3.A for the new request.
 
 ### 11.3 Lifecycle (strict order)
 
-**A. On new request (before anything else):**
+**A. On new request (after 11.2 checks pass):**
 1. Append a new top-level task to `todos.md`, decomposed into sub-tasks if multi-step.
 2. Save `todos.md`.
 3. Then propose the plan (per §5) and wait for approval.
 
 Format:
-```
+```markdown
 - [ ] <task title>
   - [ ] <sub-task>
 ```
@@ -110,5 +118,6 @@ Format:
 5. **Only then** remove the block from `todos.md` and save.
 
 Never delete before archive write succeeds.
+
 
 

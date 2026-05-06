@@ -1,7 +1,11 @@
 - [ ] Phase 3: Office Skills & MCP Integration
+  - [x] Implement Intelligent File Search Tool
+    - [x] Create `src/engine/file_search.py` with upward-recursive logic
+    - [x] Implement `search_tracking.json` logic for location learning
+    - [x] Integrate File Search with `@tool` decorator
+    - [x] Add exlcusion list for system/junk folders
   - [ ] Implement MCP Client for standardized tool access
-  - [ ] Implement 'File Search' tool (Local)
-  - [ ] Implement 'Document Reader' (PDF, Docx)
+  - [x] Implement 'Document Reader' (PDF, Docx, Xlsx, Text)
   - [ ] Implement 'Data Analysis' tool (Pandas)
 - [ ] Phase 4: Security & Packaging
   - [ ] Add support for local models (Ollama)

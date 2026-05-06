@@ -13,8 +13,9 @@ Simplex AI is an assistant-type AI agent, optimized for office work environments
     *   Package Manager: `uv` (for speed and efficient environment management).
 
 ## 3. Extensibility System
-*   **Sub-agents:** Delegation system to specialized agents with their own prompts and tools.
-*   **Skills:** Modular groups of "Tools" (e.g., "Office Skill", "Web Search Skill") that can be loaded dynamically.
+*   **Sub-agents:** Delegation system to specialized agents with their own prompts and tools. [IMPLEMENTING]
+    *   *Architecture:* Isolated LLM calls with specific system prompts for internal tasks (e.g., reranking, analysis).
+    *   *Integration:* Used within native tools to process high-volume data before returning to the main agent.
 *   **Tools (Native tools):** Python functions decorated to be exposed to the LLM.
 *   **MCP Integration (Model Context Protocol):** Integrated client to connect to MCP servers (for standardized access to file system, databases, external applications).
 

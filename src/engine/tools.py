@@ -4,7 +4,7 @@ src/engine/tools.py · Tool System · Provides decorators and registry for LLM t
 
 import inspect
 import functools
-from typing import Any, Callable, Dict, List, Optional, get_type_hints
+from typing import Any, Callable, Dict, List, Optional, get_type_hints, get_origin
 
 
 class ToolRegistry:
@@ -20,6 +20,11 @@ class ToolRegistry:
     def register(self, func: Callable) -> Callable:
         """Registers a function as a tool."""
         name = func.__name__
+        
+        # Prevent duplicate registrations
+        if name in self.tools:
+            return func
+
         doc = func.__doc__ or "No description provided."
         
         # Parse parameters using inspection
@@ -31,18 +36,23 @@ class ToolRegistry:
         
         for param_name, param in sig.parameters.items():
             param_type = type_hints.get(param_name, str)
+            origin = get_origin(param_type) or param_type
+            
             # Map Python types to JSON schema types
             json_type = "string"
-            if param_type == int: json_type = "integer"
-            elif param_type == float: json_type = "number"
-            elif param_type == bool: json_type = "boolean"
-            elif param_type == list: json_type = "array"
-            elif param_type == dict: json_type = "object"
+            if origin == int: json_type = "integer"
+            elif origin == float: json_type = "number"
+            elif origin == bool: json_type = "boolean"
+            elif origin in (list, List): json_type = "array"
+            elif origin in (dict, Dict): json_type = "object"
             
             properties[param_name] = {
                 "type": json_type,
-                "description": f"Parameter {param_name}" # Improvements can be made by parsing docstrings further
+                "description": f"Parameter {param_name}"
             }
+            
+            if json_type == "array":
+                properties[param_name]["items"] = {"type": "string"}
             
             if param.default is inspect.Parameter.empty:
                 required.append(param_name)

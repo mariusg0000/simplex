@@ -4,6 +4,7 @@ src/storage.py · User preferences storage · Manages persistent UI settings in 
 
 import json
 from pathlib import Path
+from typing import List
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +16,7 @@ class UserPreferences(BaseModel):
     """
     show_reasoning: bool = Field(default=False)
     dark_mode: bool = Field(default=False)
+    working_directories: List[str] = Field(default_factory=list)
     # Add future parameters here: font_size, last_model, etc.
 
 
