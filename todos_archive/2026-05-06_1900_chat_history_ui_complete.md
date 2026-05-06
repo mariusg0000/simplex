@@ -1,0 +1,6 @@
+- [x] Phase 4: Chat History & UI Refinement
+  - [x] Create SQLite database layer (src/db.py)
+  - [x] Implement Sidebar (left drawer) in main.py
+  - [x] Implement Session Management (New Chat, Load, Save)
+  - [x] Auto-generate titles for chat sessions
+  - [x] Compact UI layout (max width, reduced gaps)

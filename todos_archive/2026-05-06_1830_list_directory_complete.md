@@ -1,0 +1,2 @@
+- [x] Phase 3: Office Skills & Advanced Features (Partial)
+  - [x] Implement 'list_directory' tool (ls functionality)
