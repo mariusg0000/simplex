@@ -1,0 +1,8 @@
+- [ ] Phase 5: Security & Packaging
+  - [x] Implement File Management Tools (read, write, append, patch, delete)
+  - [x] Implement Rolling Backup system (~/.backups/ with v1, v2, v3)
+  - [x] BUG_FIX: Fix LiteLLM error for DeepSeek reasoning_content
+  - [ ] Add support for local models (Ollama)
+  - [ ] Build process for .exe/binary
+  - [ ] Implement MCP Client for standardized tool access
+  - [ ] Implement 'Data Analysis' tool (Pandas for XLSX/CSV)

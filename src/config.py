@@ -2,6 +2,7 @@
 src/config.py · Configuration management using Pydantic Settings · Fills settings from .env file.
 """
 
+import logging
 from typing import Optional
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     )
     
     native_mode: bool = Field(default=True, validation_alias=AliasChoices("simplex_native_mode", "native_mode"))
+    log_level: str = Field(default="INFO", validation_alias=AliasChoices("simplex_log_level", "log_level"))
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -33,3 +35,10 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("simplex")

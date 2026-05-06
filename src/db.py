@@ -85,5 +85,11 @@ class ChatDatabase:
             conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
 
+    def update_title(self, session_id: str, new_title: str):
+        """Updates the title of a specific session."""
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (new_title, session_id))
+            conn.commit()
+
 # Global database instance
 db = ChatDatabase()

@@ -1,5 +1,0 @@
-- [ ] Phase 5: Security & Packaging
-  - [ ] Add support for local models (Ollama)
-  - [ ] Build process for .exe/binary
-  - [ ] Implement MCP Client for standardized tool access
-  - [ ] Implement 'Data Analysis' tool (Pandas for XLSX/CSV)

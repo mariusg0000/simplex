@@ -25,7 +25,7 @@ class ToolRegistry:
         if name in self.tools:
             return func
 
-        doc = func.__doc__ or "No description provided."
+        doc = func.__doc__ or f"Tool for {name}"
         
         # Parse parameters using inspection
         sig = inspect.signature(func)
@@ -34,6 +34,16 @@ class ToolRegistry:
         properties = {}
         required = []
         
+        # Simple docstring parser for parameters
+        doc_lines = doc.split("\n")
+        param_docs = {}
+        for line in doc_lines:
+            if ":" in line and any(p in line for p in sig.parameters):
+                parts = line.split(":", 1)
+                p_name = parts[0].strip().split()[-1] # Usually the last word before :
+                if p_name in sig.parameters:
+                    param_docs[p_name] = parts[1].strip()
+
         for param_name, param in sig.parameters.items():
             param_type = type_hints.get(param_name, str)
             origin = get_origin(param_type) or param_type
@@ -46,9 +56,10 @@ class ToolRegistry:
             elif origin in (list, List): json_type = "array"
             elif origin in (dict, Dict): json_type = "object"
             
+            p_desc = param_docs.get(param_name, f"The {param_name} to use for {name}")
             properties[param_name] = {
                 "type": json_type,
-                "description": f"Parameter {param_name}"
+                "description": p_desc
             }
             
             if json_type == "array":
@@ -61,7 +72,7 @@ class ToolRegistry:
             "type": "function",
             "function": {
                 "name": name,
-                "description": doc.split('\n')[0], # Use first line of docstring
+                "description": doc.strip().split('\n')[0],
                 "parameters": {
                     "type": "object",
                     "properties": properties,

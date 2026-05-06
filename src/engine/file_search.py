@@ -6,12 +6,15 @@ import os
 import json
 import fnmatch
 import asyncio
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 from src.engine.tools import tool
 from src.storage import storage
 from src.engine.agents import RerankerAgent
 from anyio import to_thread
+
+log = logging.getLogger("simplex.engine.file_search")
 
 TRACKING_FILE = "search_tracking.json"
 
@@ -150,7 +153,7 @@ async def file_search(query: str, keywords: List[str] = None) -> str:
     # Deduplicate and limit to 6
     search_keywords = list(set(search_keywords))[:6]
     
-    print(f"[DEBUG] Search started with keywords: {search_keywords}")
+    log.debug("Search started with keywords: %s", search_keywords)
 
     visited_dirs = set()
     raw_results = []
@@ -177,7 +180,7 @@ async def file_search(query: str, keywords: List[str] = None) -> str:
             pass
 
         # Use Reranker for the final selection (max 10)
-        print(f"[DEBUG] Invoking Reranker on {len(unique_results)} candidates...")
+        log.debug("Invoking Reranker on %d candidates", len(unique_results))
         reranker = RerankerAgent()
         best_matches = await reranker.rerank_files(query, unique_results)
         
@@ -198,12 +201,12 @@ async def list_directory(path: str) -> str:
     import os
     from datetime import datetime
     
-    print(f"[DEBUG] list_directory call received for path: {path}")
+    log.debug("list_directory call received for path: %s", path)
     target_path = Path(path).absolute()
     
     # Security: Ensure path is within working directories
     work_dirs = [Path(d).absolute() for d in storage.prefs.working_directories]
-    print(f"[DEBUG] Validating {target_path} against {work_dirs}")
+    log.debug("Validating %s against working directories", target_path)
     is_safe = False
     for wd in work_dirs:
         if target_path == wd or target_path.is_relative_to(wd):
@@ -211,10 +214,10 @@ async def list_directory(path: str) -> str:
             break
     
     if not is_safe:
-        print(f"[DEBUG] list_directory Access Denied: {target_path} not in {work_dirs}")
+        log.debug("list_directory Access Denied: %s not in working directories", target_path)
         return f"Access Denied: Path '{path}' is outside your configured working directories."
 
-    print(f"[DEBUG] list_directory executing for: {target_path}")
+    log.debug("list_directory executing for: %s", target_path)
 
     if not target_path.exists():
         return f"Error: Path '{path}' does not exist."

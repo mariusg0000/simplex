@@ -37,4 +37,7 @@ async def test_stream_chat_mock(mocker):
     async for chunk in stream_chat(messages):
         collected_chunks.append(chunk)
         
-    assert collected_chunks == ["Hello", " world!"]
+    assert collected_chunks == [
+        {"type": "content", "content": "Hello"},
+        {"type": "content", "content": " world!"}
+    ]
