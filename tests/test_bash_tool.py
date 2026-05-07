@@ -113,6 +113,11 @@ def test_check_dangerous_rm():
     assert _check_dangerous("rm -rf /tmp/x") is not None
 
 
+def test_check_dangerous_rm_bare():
+    """Bare rm without flags is also detected as dangerous."""
+    assert _check_dangerous("rm tare.txt") is not None
+
+
 def test_check_dangerous_dd():
     assert _check_dangerous("dd if=img.iso of=/dev/sdb") is not None
 

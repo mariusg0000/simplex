@@ -17,7 +17,7 @@ MAX_LINES = 500
 MAX_CHARS = 50 * 1024  # 50 KB
 
 DANGEROUS_PATTERNS: list[tuple[str, str]] = [
-    (r"rm\s+-[a-zA-Z]*[rf][a-zA-Z]*\b", "Deletes files/folders permanently."),
+    (r"\brm\b", "Deletes files/folders permanently."),
     (r"rmdir\b", "Deletes directories."),
     (r"git\s+clean\s+-[a-z]*[f]", "Deletes untracked files permanently."),
     (r"dd\s+.*of=/dev/\w", "Can overwrite/destroy disk partitions."),
