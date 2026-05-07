@@ -2,37 +2,54 @@
 src/ui/state.py · Shared application state · Holds globals accessed by UI components.
 """
 
+import shutil
 import uuid
 import asyncio
 from typing import Any, Optional
 
-current_session_id: str = str(uuid.uuid4())
-chat_title: str = "New Chat"
-messages: list = []
-active_task: Optional[asyncio.Task] = None
+TOOL_TABLE: list[tuple[str, str, str, list[str]]] = [
+    ("rg", "Fast text search in plain-text files", "Use rg.", ["grep"]),
+    ("fd", "Fast file/directory search by name", "Use fd.", ["find"]),
+    ("sd", "Find & Replace text", "Use sd.", ["sed"]),
+    ("bat", "File reader with line numbers and syntax highlighting", "Use bat -n.", ["cat"]),
+    ("mlr", "Structured CSV/TSV data processing", "Use mlr --csv.", ["awk", "cut"]),
+    ("trash-put", "Move files to Recycle Bin", "Use trash-put.", ["rm"]),
+]
 
-scroll_area: Any = None
-chat_content: Any = None
-message_input: Any = None
-drawer: Any = None
-sidebar_content: Any = None
-show_reasoning_checkbox: Any = None
+_system_env_cache: Optional[str] = None
 
-from src.config import settings
+
+def _build_env_section() -> str:
+    """Detects installed modern utilities and builds the SYSTEM ENVIRONMENT section."""
+    global _system_env_cache
+    if _system_env_cache is not None:
+        return _system_env_cache
+
+    lines = []
+    for cmd, desc, rule, banned in TOOL_TABLE:
+        if shutil.which(cmd) is not None:
+            forbidden = ", ".join(f"`{b}`" for b in banned)
+            lines.append(f"{cmd} — {desc} — {rule} Forbidden: {forbidden}.")
+
+    section = "\n".join(lines) if lines else ""
+    _system_env_cache = section
+    return section
 
 
 def get_system_prompt() -> dict:
-    """Returns the current system prompt with strategic guidelines."""
-    return {
-        "role": "system",
-        "content": settings.system_prompt + (
-            "\n\nSTRATEGIC GUIDELINES:\n"
-            "1. BE EFFICIENT: Do not perform more than 2 search attempts for the same request.\n"
-            "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
-            "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
-            "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates."
-        )
-    }
+    """Returns the current system prompt with env info and strategic guidelines."""
+    env_section = _build_env_section()
+    content = settings.system_prompt
+    if env_section:
+        content += f"\n\nSYSTEM ENVIRONMENT:\n{env_section}"
+    content += (
+        "\n\nSTRATEGIC GUIDELINES:\n"
+        "1. BE EFFICIENT: Do not perform more than 2 search attempts for the same request.\n"
+        "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
+        "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
+        "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates."
+    )
+    return {"role": "system", "content": content}
 
 
 def init_messages():
