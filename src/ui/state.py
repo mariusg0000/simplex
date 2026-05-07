@@ -11,6 +11,12 @@ from typing import Any, Optional
 
 from src.config import settings
 
+# Prepend bundled tools directory to PATH so shutil.which() finds them.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_BIN_DIR = os.path.join(_PROJECT_ROOT, "bin")
+if os.path.isdir(_BIN_DIR):
+    os.environ["PATH"] = f"{_BIN_DIR}:{os.environ.get('PATH', '')}"
+
 TOOL_TABLE: list[tuple[str, str, str, list[str]]] = [
     ("rg", "Fast text search in plain-text files", "Use rg.", ["grep"]),
     ("fd", "Fast file/directory search by name", "Use fd.", ["find"]),
@@ -29,6 +35,8 @@ TOOL_TABLE: list[tuple[str, str, str, list[str]]] = [
     ("pandoc", "Convert between document formats (.md, .docx, etc.)", "Use pandoc.", []),
     ("tesseract", "OCR text from images and scanned PDFs", "Use tesseract.", []),
     ("xdg-open", "Open files/directories/URLs with the system default application", "When user asks to open a file, use xdg-open.", []),
+    ("ddgr", "Search DuckDuckGo from the terminal", "Use ddgr.", []),
+    ("reader", "Extract main content from web pages and EML files as clean text/markdown", "Use reader -o for markdown output.", []),
 ]
 
 _system_env_cache: Optional[str] = None
@@ -58,6 +66,8 @@ TOOL_PACKAGES: dict[str, str] = {
     "pdfimages": "poppler-utils",
     "pandoc": "pandoc",
     "tesseract": "tesseract-ocr",
+    "ddgr": "ddgr",
+    "reader": "",
 }
 
 
