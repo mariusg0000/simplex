@@ -15,6 +15,7 @@ log = logging.getLogger("simplex.engine.bash_tool")
 
 MAX_LINES = 500
 MAX_CHARS = 50 * 1024  # 50 KB
+SENTINEL = "___EXEC_RESULTS___"
 
 DANGEROUS_PATTERNS: list[tuple[str, str]] = [
     (r"\brm\b", "Deletes files/folders permanently."),
@@ -91,38 +92,52 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
 
     log.debug("Executing bash command (timeout=%ds): %s", timeout, command[:200])
 
+    # Inject sentinel marker to detect silent commands.
+    # Wrap in a subshell so `exit N` inside the command doesn't
+    # prevent the sentinel from being emitted.
+    # Use printf to guarantee sentinel is always on its own line,
+    # even when the command produces no trailing newline.
+    full_command = f"( {command} ); printf '\\n{SENTINEL}:%s\\n' \"$?\""
+
     try:
         process = await asyncio.create_subprocess_shell(
-            command,
+            full_command,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            stdin=asyncio.subprocess.DEVNULL,
         )
 
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            stdout, _ = await asyncio.wait_for(
                 process.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             process.kill()
             await process.wait()
-            return (
-                f"Exit code: -1\n"
-                f"Command timed out after {timeout} seconds.\n"
-                f"Command: {command[:500]}"
-            )
+            return "Error: Command timed out. Avoid long-running or interactive commands."
 
-        exit_code = process.returncode or 0
-        stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
-        stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+        output = stdout.decode("utf-8", errors="replace").strip()
 
-        output_parts = [f"Exit code: {exit_code}"]
+        sentinel_marker = f"{SENTINEL}:"
+        if sentinel_marker not in output:
+            return _truncate_output(output) if output else "Success: Command finished with no output."
 
-        if stdout:
-            output_parts.append(_truncate_output(stdout, "stdout"))
-        if stderr:
-            output_parts.append(_truncate_output(stderr, "stderr"))
+        lines = output.rsplit("\n", 1)
+        if len(lines) == 2:
+            actual_output = lines[0].strip()
+            exit_code_line = lines[1]
+        else:
+            actual_output = ""
+            exit_code_line = lines[0]
 
-        return "\n".join(output_parts)
+        exit_code = exit_code_line.replace(sentinel_marker, "").strip()
+
+        if not actual_output:
+            if exit_code == "0":
+                return "Success: Command finished with no output."
+            return f"Command failed with exit code {exit_code}."
+
+        return _truncate_output(actual_output)
 
     except FileNotFoundError as e:
         return f"Error: Command not found — {str(e)}"
@@ -131,34 +146,29 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
         return f"Error executing command: {str(e)}"
 
 
-def _truncate_output(text: str, label: str) -> str:
+def _truncate_output(text: str) -> str:
     """
     Truncate output to MAX_LINES lines or MAX_CHARS characters.
+    Appends a truncation notice if either limit was exceeded.
     """
-    lines = text.splitlines()
-    total_lines = len(lines)
+    total_lines = text.count("\n") + 1
     total_chars = len(text)
 
-    truncated_lines = False
-    truncated_chars = False
+    truncated = False
+    reasons = []
 
     if total_chars > MAX_CHARS:
         text = text[:MAX_CHARS]
-        truncated_chars = True
+        truncated = True
+        reasons.append(f"{total_chars - MAX_CHARS} chars removed")
 
     if total_lines > MAX_LINES:
         lines = text.splitlines()[:MAX_LINES]
         text = "\n".join(lines)
-        truncated_lines = True
+        truncated = True
+        reasons.append(f"{total_lines - MAX_LINES} lines removed")
 
-    result = f"--- {label} ({total_lines} lines, {total_chars} chars) ---\n{text}"
+    if truncated:
+        text += f"\n[Output truncated: {', '.join(reasons)}]"
 
-    if truncated_lines or truncated_chars:
-        reasons = []
-        if truncated_lines:
-            reasons.append(f"{total_lines - MAX_LINES} lines removed")
-        if truncated_chars:
-            reasons.append(f"{total_chars - MAX_CHARS} chars removed")
-        result += f"\n[Output truncated: {', '.join(reasons)}]"
-
-    return result
+    return text

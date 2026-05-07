@@ -47,12 +47,7 @@ async def refresh_chat_display():
                     with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
                         ui.markdown(content)
 
-                # Fallback: if the model ONLY emitted reasoning (no content) and show_reasoning
-                # is OFF, show the reasoning text in a regular bubble so the message doesn't
-                # vanish entirely. When show_reasoning is ON, the reasoning card below suffices.
-                elif reasoning and not show_reasoning:
-                    with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
-                        ui.markdown(reasoning)
+                # When show_reasoning is OFF, we NEVER display reasoning text anywhere.
 
                 # Reasoning card — separate visual block, only shown when the user enables it.
                 # Always appears AFTER the content bubble with a separator in between.
@@ -280,15 +275,8 @@ async def _process_response(thinking_indicator: ui.element):
                 try: card.delete()
                 except: pass
 
-        # Reasoning cards were just deleted above if show_reasoning is OFF.
-        # If the model only emitted reasoning (no content) and show_reasoning is OFF,
-        # create a fallback content bubble so the user still sees the response.
-        # When show_reasoning is ON, the reasoning card already displays the text —
-        # no duplicate bubble needed.
-        if not total_response and total_reasoning and not storage.prefs.show_reasoning:
-            with state.chat_content:
-                with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
-                    ui.markdown(total_reasoning)
+        # When show_reasoning is OFF, reasoning cards were deleted above.
+        # Never promote reasoning to content — the model's response is authoritative.
 
         # Preserve model's raw output: NEVER promote reasoning -> content.
         # The two fields are semantically distinct. Content = final response,

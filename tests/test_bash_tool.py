@@ -29,14 +29,12 @@ async def _test_approve(*_args) -> bool:
 @pytest.mark.asyncio
 async def test_bash_simple_echo():
     result = await bash('echo "hello world"', explanation="test")
-    assert "Exit code: 0" in result
     assert "hello world" in result
 
 
 @pytest.mark.asyncio
 async def test_bash_multiple_lines():
     result = await bash('printf "line1\\nline2\\nline3"', explanation="test")
-    assert "Exit code: 0" in result
     assert "line1" in result
     assert "line2" in result
     assert "line3" in result
@@ -52,27 +50,27 @@ async def test_bash_with_stderr():
 @pytest.mark.asyncio
 async def test_bash_non_zero_exit():
     result = await bash("exit 42", explanation="test")
-    assert "Exit code: 42" in result
+    assert "failed with exit code 42" in result
 
 
 @pytest.mark.asyncio
 async def test_bash_timeout():
     result = await bash("sleep 10", timeout=1, explanation="test")
-    assert "timed out" in result.lower() or "Exit code: -1" in result
+    assert "timed out" in result.lower()
 
 
 @pytest.mark.asyncio
 async def test_bash_command_not_found():
     result = await bash("nonexistent_command_xyz123", explanation="test")
-    assert "Exit code: 127" in result
+    assert "not found" in result.lower()
 
 
 @pytest.mark.asyncio
 async def test_truncate_by_lines():
     lines = "\n".join([f"line {i}" for i in range(600)])
-    truncated = _truncate_output(lines, "stdout")
+    truncated = _truncate_output(lines)
     truncated_lines = truncated.splitlines()
-    assert len(truncated_lines) <= 503
+    assert len(truncated_lines) <= 502
     assert "[Output truncated:" in truncated
     assert "lines removed" in truncated
 
@@ -80,7 +78,7 @@ async def test_truncate_by_lines():
 @pytest.mark.asyncio
 async def test_truncate_by_chars():
     huge_output = "x" * (60 * 1024)
-    truncated = _truncate_output(huge_output, "stdout")
+    truncated = _truncate_output(huge_output)
     assert len(truncated) < 55 * 1024
     assert "[Output truncated:" in truncated
     assert "chars removed" in truncated
@@ -89,20 +87,18 @@ async def test_truncate_by_chars():
 @pytest.mark.asyncio
 async def test_bash_unknown_command():
     result = await bash("/nonexistent/binary --version", timeout=5, explanation="test")
-    assert "Exit code: 127" in result
+    assert "not found" in result.lower() or "no such file" in result.lower()
 
 
 @pytest.mark.asyncio
 async def test_bash_timeout_clamp_negative():
     result = await bash("echo ok", timeout=-5, explanation="test")
-    assert "Exit code: 0" in result
     assert "ok" in result
 
 
 @pytest.mark.asyncio
 async def test_bash_timeout_clamp_excessive():
     result = await bash("echo ok", timeout=999, explanation="test")
-    assert "Exit code: 0" in result
     assert "ok" in result
 
 
@@ -174,7 +170,7 @@ async def test_dangerous_command_confirmed():
     """Dangerous command executes when callback approves."""
     registry.on_confirmation_required = _test_approve
     result = await bash("rm -rf /tmp/__simplex_test_nonexistent_xyz", explanation="Deletes temp test folder")
-    assert "Exit code:" in result
+    assert "failed with exit code" in result or "Success" in result
 
 
 @pytest.mark.asyncio
@@ -190,7 +186,6 @@ async def test_need_confirmation_safe_cmd_approved():
     """Safe command with need_confirmation=True executes when approved."""
     registry.on_confirmation_required = _test_approve
     result = await bash("echo approved", explanation="Prints approved", need_confirmation=True)
-    assert "Exit code: 0" in result
     assert "approved" in result
 
 

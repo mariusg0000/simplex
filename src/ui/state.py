@@ -28,6 +28,7 @@ TOOL_TABLE: list[tuple[str, str, str, list[str]]] = [
     ("pdfimages", "Extract embedded images from a PDF", "Use pdfimages.", []),
     ("pandoc", "Convert between document formats (.md, .docx, etc.)", "Use pandoc.", []),
     ("tesseract", "OCR text from images and scanned PDFs", "Use tesseract.", []),
+    ("xdg-open", "Open files/directories/URLs with the system default application", "When user asks to open a file, use xdg-open.", []),
 ]
 
 _system_env_cache: Optional[str] = None
