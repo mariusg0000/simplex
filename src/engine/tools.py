@@ -4,7 +4,7 @@ src/engine/tools.py · Tool System · Provides decorators and registry for LLM t
 
 import inspect
 import functools
-from typing import Any, Callable, Dict, List, Optional, get_type_hints, get_origin
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, get_type_hints, get_origin
 
 
 class ToolRegistry:
@@ -16,6 +16,10 @@ class ToolRegistry:
     def __init__(self):
         self.tools: Dict[str, Callable] = {}
         self.schemas: List[Dict[str, Any]] = []
+        self.disabled_tools: Set[str] = set()
+
+        # Event-driven confirmation callback (set by UI layer)
+        self.on_confirmation_required: Optional[Callable[[str, str, str], Awaitable[bool]]] = None
 
     def register(self, func: Callable) -> Callable:
         """Registers a function as a tool."""
@@ -85,14 +89,29 @@ class ToolRegistry:
         self.schemas.append(schema)
         return func
 
+    def disable(self, name: str) -> None:
+        """Disable a tool so it won't be exposed to the LLM or callable."""
+        self.disabled_tools.add(name)
+
+    def enable(self, name: str) -> None:
+        """Re-enable a previously disabled tool."""
+        self.disabled_tools.discard(name)
+
+    def is_disabled(self, name: str) -> bool:
+        """Check if a tool is disabled."""
+        return name in self.disabled_tools
+
     def get_schemas(self) -> List[Dict[str, Any]]:
-        """Returns schemas for all registered tools."""
-        return self.schemas
+        """Returns schemas for all registered tools (excluding disabled ones)."""
+        return [s for s in self.schemas if s["function"]["name"] not in self.disabled_tools]
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> Any:
         """Executes a registered tool by name with provided arguments."""
         if name not in self.tools:
             return f"Error: Tool '{name}' not found."
+        
+        if name in self.disabled_tools:
+            return f"Error: Tool '{name}' is disabled."
         
         func = self.tools[name]
         try:

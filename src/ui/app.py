@@ -18,6 +18,14 @@ def init_ui():
             .nicegui-content { padding: 0 !important; margin: 0 !important; }
             .q-message-text, .q-markdown { user-select: text !important; }
             .selectable-text { user-select: text !important; cursor: text; }
+
+            /* Tight heading scale: 1px difference between levels */
+            .nicegui-markdown h1 { font-size: 1.125rem !important; line-height: 1.5rem !important; margin: 0.75rem 0 0.375rem 0 !important; font-weight: 600 !important; }
+            .nicegui-markdown h2 { font-size: 1.0625rem !important; line-height: 1.4rem !important; margin: 0.625rem 0 0.3125rem 0 !important; font-weight: 600 !important; }
+            .nicegui-markdown h3 { font-size: 1rem !important; line-height: 1.375rem !important; margin: 0.5rem 0 0.25rem 0 !important; font-weight: 600 !important; }
+            .nicegui-markdown h4 { font-size: 0.9375rem !important; line-height: 1.3rem !important; margin: 0.4375rem 0 0.1875rem 0 !important; font-weight: 600 !important; }
+            .nicegui-markdown h5 { font-size: 0.875rem !important; line-height: 1.25rem !important; margin: 0.375rem 0 0.125rem 0 !important; font-weight: 600 !important; }
+            .nicegui-markdown h6 { font-size: 0.8125rem !important; line-height: 1.2rem !important; margin: 0.3125rem 0 0.125rem 0 !important; font-weight: 600 !important; }
         </style>
     """)
     ui.query('body').classes('p-0 m-0 overflow-hidden')

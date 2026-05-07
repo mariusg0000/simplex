@@ -9,6 +9,7 @@ from src.ui.sidebar import refresh_sidebar
 from src.db import db
 from src.storage import storage
 from src.engine.chat import stream_chat
+from src.engine.tools import registry
 
 
 async def start_new_chat():
@@ -97,6 +98,42 @@ async def handle_send():
 
     state.scroll_area.scroll_to(percent=1.0, duration=0.2)
     state.active_task = asyncio.create_task(_process_response(thinking_indicator=thinking_container))
+
+
+async def _show_confirmation_dialog(command: str, explanation: str, danger: str) -> bool:
+    """Opens a confirmation dialog and returns True if user approves, False otherwise."""
+    loop = asyncio.get_event_loop()
+    future = loop.create_future()
+
+    def _confirm(dialog, future):
+        future.set_result(True)
+        dialog.close()
+
+    def _deny(dialog, future):
+        future.set_result(False)
+        dialog.close()
+
+    with ui.dialog() as dialog, ui.card().classes("w-96 p-4"):
+        ui.label("⚠️ Confirmare comandă").classes("text-lg font-bold mb-2")
+        ui.label(explanation).classes("text-sm mb-2")
+
+        if danger:
+            ui.label(f"Motiv: {danger}").classes("text-xs text-red-600 mb-2")
+
+        ui.label(f"Comanda: {command[:200]}").classes(
+            "text-[10px] text-gray-400 font-mono bg-gray-100 p-2 rounded mb-4 break-all"
+        )
+
+        with ui.row().classes("w-full gap-2 justify-end"):
+            ui.button("Nu", on_click=lambda d=dialog, f=future: _deny(d, f))
+            ui.button("✅ Da", on_click=lambda d=dialog, f=future: _confirm(d, f)).props("autofocus color=primary")
+
+    dialog.open()
+    return await future
+
+
+# Install the confirmation callback on the tool registry
+registry.on_confirmation_required = _show_confirmation_dialog
 
 
 async def _process_response(thinking_indicator: ui.element):
