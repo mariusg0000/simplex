@@ -3,6 +3,8 @@ src/ui/chat_view.py · Chat logic · Message handling, streaming response displa
 """
 
 import asyncio
+import sys
+from datetime import datetime
 from nicegui import ui
 from src.ui import state
 from src.ui.sidebar import refresh_sidebar
@@ -10,6 +12,16 @@ from src.db import db
 from src.storage import storage
 from src.engine.chat import stream_chat
 from src.engine.tools import registry
+
+
+def _debug(msg: str):
+    line = f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [CHAT_VIEW_DEBUG] {msg}"
+    print(line, file=sys.stderr, flush=True)
+    try:
+        with open("/tmp/simplex_debug.log", "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
 
 
 async def start_new_chat():
@@ -21,6 +33,8 @@ async def start_new_chat():
     state.chat_title = "New Chat"
     state.init_messages()
     state.chat_content.clear()
+    if state.usage_label:
+        state.usage_label.set_text("Context: 0k - 0.0% | Cost: $0.000")
     refresh_sidebar()
 
 
@@ -33,31 +47,16 @@ async def refresh_chat_display():
         last_assistant_tool_calls: list[dict] | None = None
         for msg in dialogue:
             if msg["role"] == "user":
-                ui.chat_message(msg["content"], name="You", sent=True, avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=User")
+                with ui.element("div").classes("terminal-user-block"):
+                    ui.label("▸ You:").classes("terminal-user-prefix")
+                    ui.markdown(msg["content"]).classes("terminal-content")
 
             elif msg["role"] == "assistant":
                 last_assistant_tool_calls = msg.get("tool_calls")
-                reasoning = msg.get("reasoning_content")
                 content = msg.get("content")
-                show_reasoning = storage.prefs.show_reasoning
 
-                # Content bubble — only when the model emitted actual content text.
-                # We NEVER promote reasoning to content here; reasoning has its own visual block.
                 if content:
-                    with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
-                        ui.markdown(content)
-
-                # When show_reasoning is OFF, we NEVER display reasoning text anywhere.
-
-                # Reasoning card — separate visual block, only shown when the user enables it.
-                # Always appears AFTER the content bubble with a separator in between.
-                if reasoning and show_reasoning:
-                    if content:
-                        ui.separator().classes("my-1 opacity-30")
-                    with ui.card().classes("w-full bg-indigo-50 px-3 py-1 shadow-none border-l-4 border-primary gap-0"):
-                        ui.label("Reasoning Process:").classes("text-[10px] font-bold text-primary m-0 p-0 uppercase")
-                        with ui.scroll_area().classes("h-20 w-full m-0 p-0"):
-                            ui.markdown(reasoning).classes("text-sm text-slate-600 italic selectable-text")
+                    ui.markdown(content).classes("terminal-content")
 
             elif msg["role"] == "tool":
                 cmd_snippet = ""
@@ -71,10 +70,10 @@ async def refresh_chat_display():
                                 cmd_snippet = cmd[:50] + ("..." if len(cmd) > 50 else "")
                             except (json.JSONDecodeError, KeyError, TypeError):
                                 pass
-                label = f"Used tool: {msg.get('name', 'unknown')}"
+                label = f"▸ tool: {msg.get('name', 'unknown')}"
                 if cmd_snippet:
                     label += f" — {cmd_snippet}"
-                ui.label(label).classes("text-[10px] text-gray-400 italic")
+                ui.label(label).classes("terminal-tool")
 
     await asyncio.sleep(0.1)
     state.scroll_area.scroll_to(percent=1.0, duration=0.2)
@@ -114,7 +113,9 @@ async def handle_send():
 
     state.message_input.value = ""
     with state.chat_content:
-        ui.chat_message(user_input, name="You", sent=True, avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=User")
+        with ui.element("div").classes("terminal-user-block"):
+            ui.label("▸ You:").classes("terminal-user-prefix")
+            ui.markdown(user_input).classes("terminal-content")
 
     state.messages.append({"role": "user", "content": user_input})
 
@@ -125,6 +126,7 @@ async def handle_send():
             ui.label("Thinking...")
 
     state.scroll_area.scroll_to(percent=1.0, duration=0.2)
+    _debug(f"Created _process_response task. messages count before stream: {len(state.messages)}")
     state.active_task = asyncio.create_task(_process_response(thinking_indicator=thinking_container))
 
 
@@ -186,44 +188,52 @@ async def _show_confirmation_dialog(command: str, explanation: str, danger: str)
 
 async def _process_response(thinking_indicator: ui.element):
     """Streams the LLM response and saves to database at the end."""
+    _debug("=== _process_response STARTED ===")
+    state.status_label.set_text("Connecting...")
     try:
         total_response = ""
         total_reasoning = ""
 
         response_container = None
         reasoning_container = None
-        reasoning_scroll = None
         tool_indicator = None
 
-        all_reasoning_cards = []
+        all_reasoning_els = []
 
         async for chunk in stream_chat(state.messages):
-            if chunk["type"] == "reasoning":
+            if chunk["type"] == "status":
+                state.status_label.set_text(chunk["content"])
+
+            elif chunk["type"] == "usage":
+                ctx = chunk.get("context_tokens", 0) / 1000
+                pct = chunk.get("context_pct", 0.0)
+                cost = chunk.get("cost", 0.0)
+                state.usage_label.set_text(f"Context: {ctx:.1f}k - {pct:.1f}% | Cost: ${cost:.4f}")
+
+            elif chunk["type"] == "reasoning":
                 if thinking_indicator:
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
 
-                if reasoning_container is None:
-                    with state.chat_content:
-                        reasoning_card = ui.card().classes("w-full bg-indigo-50 px-3 py-1 shadow-none border-l-4 border-primary gap-0")
-                        all_reasoning_cards.append(reasoning_card)
-                        with reasoning_card:
-                            ui.label("Reasoning Process:").classes("text-[10px] font-bold text-primary m-0 p-0 uppercase")
-                            reasoning_scroll = ui.scroll_area().classes("h-20 w-full m-0 p-0")
-                            with reasoning_scroll:
-                                reasoning_container = ui.markdown("").classes("text-sm text-slate-600 italic selectable-text")
-
                 total_reasoning += chunk["content"]
-                reasoning_container.set_content((reasoning_container.content or "") + chunk["content"])
-                if reasoning_scroll:
-                    reasoning_scroll.scroll_to(percent=1.0, duration=0)
-                state.scroll_area.scroll_to(percent=1.0, duration=0.1)
+
+                if storage.prefs.show_reasoning:
+                    if reasoning_container is None:
+                        with state.chat_content:
+                            reasoning_sep = ui.separator().classes("my-1 opacity-20")
+                            all_reasoning_els.append(reasoning_sep)
+                            reasoning_container = ui.markdown("").classes("terminal-reasoning")
+                            all_reasoning_els.append(reasoning_container)
+
+                    reasoning_container.set_content((reasoning_container.content or "") + chunk["content"])
+                    state.scroll_area.scroll_to(percent=1.0, duration=0.1)
+                else:
+                    state.status_label.set_text(f"Reasoning: {len(total_reasoning)} chars")
 
             elif chunk["type"] == "tool":
                 response_container = None
                 reasoning_container = None
-                reasoning_scroll = None
 
                 if thinking_indicator:
                     try: thinking_indicator.delete()
@@ -234,10 +244,7 @@ async def _process_response(thinking_indicator: ui.element):
                     except: pass
 
                 with state.chat_content:
-                    tool_indicator = ui.row().classes("items-center gap-2 text-amber-600 italic text-sm bg-amber-50 p-1 rounded px-2 border border-amber-200")
-                    with tool_indicator:
-                        ui.icon("settings", size="xs")
-                        ui.label(chunk["content"])
+                    tool_indicator = ui.label(f"▸ tool: {chunk['content']}").classes("terminal-tool")
                 state.scroll_area.scroll_to(percent=1.0, duration=0.1)
 
             elif chunk["type"] == "content":
@@ -248,10 +255,10 @@ async def _process_response(thinking_indicator: ui.element):
 
                 if response_container is None:
                     with state.chat_content:
-                        with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
-                            response_container = ui.markdown("")
+                        response_container = ui.markdown("").classes("terminal-content")
 
                 total_response += chunk["content"]
+                state.status_label.set_text(f"Receiving response: {len(total_response)} chars")
                 response_container.set_content((response_container.content or "") + chunk["content"])
                 state.scroll_area.scroll_to(percent=1.0, duration=0)
 
@@ -260,25 +267,43 @@ async def _process_response(thinking_indicator: ui.element):
             except: pass
 
         if not storage.prefs.show_reasoning:
-            for card in all_reasoning_cards:
-                try: card.delete()
+            for el in all_reasoning_els:
+                try: el.delete()
                 except: pass
+            all_reasoning_els.clear()
 
-        # When show_reasoning is OFF, reasoning cards were deleted above.
+        # When show_reasoning is OFF, reasoning elements were deleted above.
         # Never promote reasoning to content — the model's response is authoritative.
 
         # Preserve model's raw output: NEVER promote reasoning -> content.
         # The two fields are semantically distinct. Content = final response,
         # reasoning_content = internal monologue. Display logic handles fallbacks.
+        state.status_label.set_text("Saving to DB...")
         state.messages.append({
             "role": "assistant",
             "content": total_response or None,
             "reasoning_content": total_reasoning or None
         })
+        _debug(f"Saving to DB — session_id={state.current_session_id}, messages_count={len(state.messages)}, title={state.chat_title}")
         db.save_session(state.current_session_id, state.chat_title, state.messages)
+        _debug("DB save complete")
+        state.status_label.set_text("Done ✓")
         refresh_sidebar()
+        state.status_label.set_text("Ready")
 
     except asyncio.CancelledError:
+        _debug("=== _process_response CANCELLED ===")
+        # Save partial response before raising
+        if total_response or total_reasoning:
+            state.messages.append({
+                "role": "assistant",
+                "content": total_response or None,
+                "reasoning_content": total_reasoning or None
+            })
+            _debug(f"Saving partial response on cancel ({len(total_response)} content, {len(total_reasoning)} reasoning chars)")
+            db.save_session(state.current_session_id, state.chat_title, state.messages)
+            refresh_sidebar()
+        state.status_label.set_text("Cancelled")
         if response_container:
             response_container.set_content((response_container.content or "") + " _(interrupted)_")
         raise

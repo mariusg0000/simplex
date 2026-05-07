@@ -17,7 +17,8 @@ class UserPreferences(BaseModel):
     show_reasoning: bool = Field(default=False)
     dark_mode: bool = Field(default=False)
     working_directories: List[str] = Field(default_factory=list)
-    # Add future parameters here: font_size, last_model, etc.
+    font_size: int = Field(default=4)
+    line_spacing: int = Field(default=2)
 
 
 class StorageManager:

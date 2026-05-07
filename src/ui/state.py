@@ -28,6 +28,7 @@ TOOL_TABLE: list[tuple[str, str, str, list[str]]] = [
     ("pdfimages", "Extract embedded images from a PDF", "Use pdfimages.", []),
     ("pandoc", "Convert between document formats (.md, .docx, etc.)", "Use pandoc.", []),
     ("tesseract", "OCR text from images and scanned PDFs", "Use tesseract.", []),
+    ("weasyprint", "Convert HTML/CSS to PDF", "Use weasyprint input.html output.pdf. CSS constraints: use tables exclusively for layout, position:absolute for covers, margin/padding for spacing. Strictly avoid flex, grid, gap, box-shadow, height:100%. If warnings appear in stderr, auto-correct the HTML/CSS and re-execute until zero warnings.", []),
     ("xdg-open", "Open files/directories/URLs with the system default application", "When user asks to open a file, use xdg-open.", []),
 ]
 
@@ -35,6 +36,8 @@ _system_env_cache: Optional[str] = None
 active_task: Optional[asyncio.Task] = None
 chat_title: str = "New Chat"
 current_session_id: str = ""
+status_label: Any = None
+usage_label: Any = None
 
 TOOL_ALIASES: dict[str, list[str]] = {
     "fd": ["fdfind"],
@@ -58,6 +61,7 @@ TOOL_PACKAGES: dict[str, str] = {
     "pdfimages": "poppler-utils",
     "pandoc": "pandoc",
     "tesseract": "tesseract-ocr",
+    "weasyprint": "weasyprint",
 }
 
 
