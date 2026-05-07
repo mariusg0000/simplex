@@ -166,7 +166,7 @@ async def test_dangerous_command_blocked():
     """Dangerous command is blocked when callback denies."""
     registry.on_confirmation_required = _test_deny
     result = await bash("rm -rf /tmp/test_x", explanation="Deletes test folder")
-    assert "cancelled by user" in result.lower()
+    assert "did not approve" in result.lower()
 
 
 @pytest.mark.asyncio
@@ -182,7 +182,7 @@ async def test_need_confirmation_safe_cmd_blocked():
     """Safe command with need_confirmation=True is blocked when denied."""
     registry.on_confirmation_required = _test_deny
     result = await bash("echo safe", explanation="Prints safe text", need_confirmation=True)
-    assert "cancelled by user" in result.lower()
+    assert "did not approve" in result.lower()
 
 
 @pytest.mark.asyncio

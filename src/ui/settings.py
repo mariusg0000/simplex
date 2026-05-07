@@ -6,6 +6,7 @@ from nicegui import ui
 from src.ui import state
 from src.ui.chat_view import refresh_chat_display
 from src.storage import storage
+from src.ui.state import TOOL_TABLE, build_install_command, find_tool
 
 
 def create_settings_dialog():
@@ -46,6 +47,22 @@ def create_settings_dialog():
         with ui.row().classes('w-full gap-2 items-center'):
             new_folder_input = ui.input(placeholder='Path...').classes('flex-grow').props('outlined dense')
             ui.button(icon='add', on_click=add_folder).props('flat round color=primary')
+
+        ui.separator().classes('my-3')
+        ui.label('Installed Tools').classes('text-sm font-semibold text-gray-500 mb-1')
+        for cmd, _, _, _ in TOOL_TABLE:
+            installed = find_tool(cmd) is not None
+            with ui.row().classes('w-full items-center gap-2 py-0.5'):
+                color = 'black' if installed else 'red-800'
+                ui.label(cmd).classes(f'text-sm font-bold text-{color}')
+                status = 'installed' if installed else 'not installed (please install)'
+                ui.label(status).classes('text-xs ml-1')
+
+        install_cmd = build_install_command()
+        if install_cmd:
+            ui.separator().classes('my-3')
+            ui.label('Install missing tools').classes('text-sm font-semibold text-gray-500 mb-1')
+            ui.textarea(value=install_cmd).props('readonly outlined dense').classes('w-full')
 
         ui.button('Close', on_click=dialog.close).classes('w-full mt-4')
 

@@ -30,23 +30,56 @@ async def refresh_chat_display():
     with state.chat_content:
         dialogue = state.messages[1:] if state.messages and state.messages[0]["role"] == "system" else state.messages
 
+        last_assistant_tool_calls: list[dict] | None = None
         for msg in dialogue:
             if msg["role"] == "user":
                 ui.chat_message(msg["content"], name="You", sent=True, avatar="https://api.dicebear.com/7.x/avataaars/svg?seed=User")
 
             elif msg["role"] == "assistant":
-                if msg.get("reasoning_content") and storage.prefs.show_reasoning:
+                last_assistant_tool_calls = msg.get("tool_calls")
+                reasoning = msg.get("reasoning_content")
+                content = msg.get("content")
+                show_reasoning = storage.prefs.show_reasoning
+
+                # Content bubble — only when the model emitted actual content text.
+                # We NEVER promote reasoning to content here; reasoning has its own visual block.
+                if content:
+                    with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
+                        ui.markdown(content)
+
+                # Fallback: if the model ONLY emitted reasoning (no content) and show_reasoning
+                # is OFF, show the reasoning text in a regular bubble so the message doesn't
+                # vanish entirely. When show_reasoning is ON, the reasoning card below suffices.
+                elif reasoning and not show_reasoning:
+                    with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
+                        ui.markdown(reasoning)
+
+                # Reasoning card — separate visual block, only shown when the user enables it.
+                # Always appears AFTER the content bubble with a separator in between.
+                if reasoning and show_reasoning:
+                    if content:
+                        ui.separator().classes("my-1 opacity-30")
                     with ui.card().classes("w-full bg-indigo-50 px-3 py-1 shadow-none border-l-4 border-primary gap-0"):
                         ui.label("Reasoning Process:").classes("text-[10px] font-bold text-primary m-0 p-0 uppercase")
                         with ui.scroll_area().classes("h-20 w-full m-0 p-0"):
-                            ui.markdown(msg["reasoning_content"]).classes("text-sm text-slate-600 italic selectable-text")
-
-                if msg.get("content"):
-                    with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
-                        ui.markdown(msg["content"])
+                            ui.markdown(reasoning).classes("text-sm text-slate-600 italic selectable-text")
 
             elif msg["role"] == "tool":
-                ui.label(f"Used tool: {msg.get('name', 'unknown')}").classes("text-[10px] text-gray-400 italic")
+                cmd_snippet = ""
+                if last_assistant_tool_calls:
+                    for tc in last_assistant_tool_calls:
+                        if tc.get("function", {}).get("name") == "bash":
+                            try:
+                                import json
+                                args = json.loads(tc["function"].get("arguments", "{}"))
+                                cmd = args.get("command", "")
+                                cmd_snippet = cmd[:30] + ("..." if len(cmd) > 30 else "")
+                            except (json.JSONDecodeError, KeyError, TypeError):
+                                pass
+                label = f"Used tool: {msg.get('name', 'unknown')}"
+                if cmd_snippet:
+                    label += f" — {cmd_snippet}"
+                ui.label(label).classes("text-[10px] text-gray-400 italic")
 
     await asyncio.sleep(0.1)
     state.scroll_area.scroll_to(percent=1.0, duration=0.2)
@@ -247,10 +280,23 @@ async def _process_response(thinking_indicator: ui.element):
                 try: card.delete()
                 except: pass
 
+        # Reasoning cards were just deleted above if show_reasoning is OFF.
+        # If the model only emitted reasoning (no content) and show_reasoning is OFF,
+        # create a fallback content bubble so the user still sees the response.
+        # When show_reasoning is ON, the reasoning card already displays the text —
+        # no duplicate bubble needed.
+        if not total_response and total_reasoning and not storage.prefs.show_reasoning:
+            with state.chat_content:
+                with ui.chat_message(name="Simplex AI", sent=False, avatar="https://api.dicebear.com/7.x/bottts/svg?seed=Simplex"):
+                    ui.markdown(total_reasoning)
+
+        # Preserve model's raw output: NEVER promote reasoning -> content.
+        # The two fields are semantically distinct. Content = final response,
+        # reasoning_content = internal monologue. Display logic handles fallbacks.
         state.messages.append({
             "role": "assistant",
-            "content": total_response if total_response else None,
-            "reasoning_content": total_reasoning if total_reasoning else None
+            "content": total_response or None,
+            "reasoning_content": total_reasoning or None
         })
         db.save_session(state.current_session_id, state.chat_title, state.messages)
         refresh_sidebar()

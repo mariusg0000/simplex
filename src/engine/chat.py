@@ -171,7 +171,11 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
             name = tc["function"]["name"]
             args = json.loads(tc["function"]["arguments"])
             
-            yield {"type": "tool", "content": f"Executing {name}..."}
+            cmd_snippet = ""
+            if name == "bash" and "command" in args:
+                cmd = args["command"]
+                cmd_snippet = cmd[:30] + ("..." if len(cmd) > 30 else "")
+            yield {"type": "tool", "content": f"Executing {name}" + (f": {cmd_snippet}" if cmd_snippet else " ...")}
             
             result = await registry.call(name, args)
             messages.append({

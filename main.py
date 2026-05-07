@@ -11,6 +11,13 @@ import src.engine.builtin_tools   # noqa: F401
 import src.engine.file_search     # noqa: F401
 import src.engine.doc_reader      # noqa: F401
 import src.engine.file_management # noqa: F401
+import src.engine.bash_tool       # noqa: F401
+
+# Disable all tools except bash
+from src.engine.tools import registry
+for tool_name in list(registry.tools.keys()):
+    if tool_name != "bash":
+        registry.disable(tool_name)
 
 if __name__ in {"__main__", "__mp_main__"}:
     init_ui()

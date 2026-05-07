@@ -58,11 +58,6 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
     Output is truncated at 500 lines or 50 KB to avoid context overflow.
     Use this to run terminal commands, scripts, or system operations.
 
-    PREFERRED TOOLS (faster & safer than classic Unix tools):
-    - For file/content search, use `rg` (ripgrep) instead of `grep`.
-    - For file editing / find-and-replace, use `sd` instead of `sed`.
-    - Chain commands with `&&` for sequential execution; use `;` only if failures are acceptable.
-
     SAFETY:
     - Set `need_confirmation` to `True` for ANY command that could be destructive
       (deleting files, modifying system settings, affecting disk/network, etc.).
@@ -92,7 +87,7 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
             command, explanation, danger_reason or ""
         )
         if not approved:
-            return "Command cancelled by user."
+            return "User did not approve this operation. Stop and ask the user how to proceed."
 
     log.debug("Executing bash command (timeout=%ds): %s", timeout, command[:200])
 
