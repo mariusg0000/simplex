@@ -66,13 +66,13 @@ async def test_bash_command_not_found():
 
 
 @pytest.mark.asyncio
-async def test_truncate_by_lines():
+async def test_truncate_no_line_limit():
+    """600 lines under 50KB should pass through without truncation."""
     lines = "\n".join([f"line {i}" for i in range(600)])
     truncated = _truncate_output(lines)
-    truncated_lines = truncated.splitlines()
-    assert len(truncated_lines) <= 502
-    assert "[Output truncated:" in truncated
-    assert "lines removed" in truncated
+    assert "line 0" in truncated
+    assert "line 599" in truncated
+    assert "[Output truncated:" not in truncated
 
 
 @pytest.mark.asyncio

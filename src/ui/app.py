@@ -33,6 +33,15 @@ def init_ui():
             .nicegui-markdown h5 { font-size: 0.875rem !important; line-height: 1.25rem !important; margin: 0.375rem 0 0.125rem 0 !important; font-weight: 600 !important; }
             .nicegui-markdown h6 { font-size: 0.8125rem !important; line-height: 1.2rem !important; margin: 0.3125rem 0 0.125rem 0 !important; font-weight: 600 !important; }
         </style>
+        <script>
+            document.addEventListener('click', function(e) {
+                var link = e.target.closest('.nicegui-markdown a');
+                if (link) {
+                    e.preventDefault();
+                    window.open(link.href, '_blank', 'noopener,noreferrer');
+                }
+            });
+        </script>
     """)
     ui.query('body').classes('p-0 m-0 overflow-hidden')
     ui.query('.nicegui-content').classes('p-0 m-0')

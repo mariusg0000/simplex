@@ -148,27 +148,13 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
 
 def _truncate_output(text: str) -> str:
     """
-    Truncate output to MAX_LINES lines or MAX_CHARS characters.
-    Appends a truncation notice if either limit was exceeded.
+    Truncate output to MAX_CHARS characters.
+    Appends a truncation notice if the limit was exceeded.
     """
-    total_lines = text.count("\n") + 1
     total_chars = len(text)
-
-    truncated = False
-    reasons = []
 
     if total_chars > MAX_CHARS:
         text = text[:MAX_CHARS]
-        truncated = True
-        reasons.append(f"{total_chars - MAX_CHARS} chars removed")
-
-    if total_lines > MAX_LINES:
-        lines = text.splitlines()[:MAX_LINES]
-        text = "\n".join(lines)
-        truncated = True
-        reasons.append(f"{total_lines - MAX_LINES} lines removed")
-
-    if truncated:
-        text += f"\n[Output truncated: {', '.join(reasons)}]"
+        text += f"\n[Output truncated: {total_chars - MAX_CHARS} chars removed]"
 
     return text

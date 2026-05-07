@@ -68,7 +68,7 @@ async def refresh_chat_display():
                                 import json
                                 args = json.loads(tc["function"].get("arguments", "{}"))
                                 cmd = args.get("command", "")
-                                cmd_snippet = cmd[:30] + ("..." if len(cmd) > 30 else "")
+                                cmd_snippet = cmd[:50] + ("..." if len(cmd) > 50 else "")
                             except (json.JSONDecodeError, KeyError, TypeError):
                                 pass
                 label = f"Used tool: {msg.get('name', 'unknown')}"
@@ -203,10 +203,6 @@ async def _process_response(thinking_indicator: ui.element):
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
-                if tool_indicator:
-                    try: tool_indicator.delete()
-                    except: pass
-                    tool_indicator = None
 
                 if reasoning_container is None:
                     with state.chat_content:
@@ -249,10 +245,6 @@ async def _process_response(thinking_indicator: ui.element):
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
-                if tool_indicator:
-                    try: tool_indicator.delete()
-                    except: pass
-                    tool_indicator = None
 
                 if response_container is None:
                     with state.chat_content:
@@ -265,9 +257,6 @@ async def _process_response(thinking_indicator: ui.element):
 
         if thinking_indicator:
             try: thinking_indicator.delete()
-            except: pass
-        if tool_indicator:
-            try: tool_indicator.delete()
             except: pass
 
         if not storage.prefs.show_reasoning:
