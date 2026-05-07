@@ -100,40 +100,60 @@ async def handle_send():
     state.active_task = asyncio.create_task(_process_response(thinking_indicator=thinking_container))
 
 
-async def _show_confirmation_dialog(command: str, explanation: str, danger: str) -> bool:
-    """Opens a confirmation dialog and returns True if user approves, False otherwise."""
-    loop = asyncio.get_event_loop()
-    future = loop.create_future()
+_confirm_dialog = None
+_confirm_title = None
+_confirm_explanation = None
+_confirm_danger = None
+_confirm_command = None
+_confirm_future = None
 
-    def _confirm(dialog, future):
-        future.set_result(True)
-        dialog.close()
 
-    def _deny(dialog, future):
-        future.set_result(False)
-        dialog.close()
+def setup_confirmation_dialog():
+    """Pre-creates the confirmation dialog in the correct NiceGUI context.
+    Must be called from init_ui() during page construction."""
+    global _confirm_dialog, _confirm_title, _confirm_explanation
+    global _confirm_danger, _confirm_command
 
-    with ui.dialog() as dialog, ui.card().classes("w-96 p-4"):
-        ui.label("⚠️ Confirmare comandă").classes("text-lg font-bold mb-2")
-        ui.label(explanation).classes("text-sm mb-2")
+    def _confirm():
+        if _confirm_future and not _confirm_future.done():
+            _confirm_future.set_result(True)
+        _confirm_dialog.close()
 
-        if danger:
-            ui.label(f"Motiv: {danger}").classes("text-xs text-red-600 mb-2")
+    def _deny():
+        if _confirm_future and not _confirm_future.done():
+            _confirm_future.set_result(False)
+        _confirm_dialog.close()
 
-        ui.label(f"Comanda: {command[:200]}").classes(
+    with ui.dialog() as _confirm_dialog, ui.card().classes("w-96 p-4"):
+        _confirm_title = ui.label("⚠️ Confirmare comandă").classes("text-lg font-bold mb-2")
+        _confirm_explanation = ui.label("").classes("text-sm mb-2")
+        _confirm_danger = ui.label("").classes("text-xs text-red-600 mb-2")
+        _confirm_command = ui.label("").classes(
             "text-[10px] text-gray-400 font-mono bg-gray-100 p-2 rounded mb-4 break-all"
         )
 
         with ui.row().classes("w-full gap-2 justify-end"):
-            ui.button("Nu", on_click=lambda d=dialog, f=future: _deny(d, f))
-            ui.button("✅ Da", on_click=lambda d=dialog, f=future: _confirm(d, f)).props("autofocus color=primary")
-
-    dialog.open()
-    return await future
+            ui.button("Nu", on_click=_deny)
+            ui.button("✅ Da", on_click=_confirm).props("autofocus color=primary")
 
 
-# Install the confirmation callback on the tool registry
-registry.on_confirmation_required = _show_confirmation_dialog
+async def _show_confirmation_dialog(command: str, explanation: str, danger: str) -> bool:
+    """Updates the pre-created dialog content, opens it, and returns user choice."""
+    global _confirm_future
+    loop = asyncio.get_event_loop()
+    _confirm_future = loop.create_future()
+
+    _confirm_explanation.set_text(explanation)
+
+    if danger:
+        _confirm_danger.set_text(f"Motiv: {danger}")
+        _confirm_danger.set_visibility(True)
+    else:
+        _confirm_danger.set_visibility(False)
+
+    _confirm_command.set_text(f"Comanda: {command[:200]}")
+    _confirm_dialog.open()
+    return await _confirm_future
 
 
 async def _process_response(thinking_indicator: ui.element):

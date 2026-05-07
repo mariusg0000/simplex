@@ -12,6 +12,12 @@ def init_ui():
     """Sets up the full UI layout and initializes global state."""
     state.init_messages()
 
+    from src.ui.chat_view import setup_confirmation_dialog
+    from src.engine.tools import registry
+    from src.ui.chat_view import _show_confirmation_dialog
+    setup_confirmation_dialog()
+    registry.on_confirmation_required = _show_confirmation_dialog
+
     ui.add_head_html("""
         <style>
             html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
