@@ -20,11 +20,12 @@ SCRIPTS_DIR.mkdir(exist_ok=True)
 if not SCRIPTS_VENV.exists():
     subprocess.run([sys.executable, "-m", "venv", str(SCRIPTS_VENV)])
 
-_WEASYPRINT_PIP = SCRIPTS_VENV / "bin" / "pip"
-if _WEASYPRINT_PIP.exists():
-    r = subprocess.run([str(_WEASYPRINT_PIP), "show", "weasyprint"], capture_output=True)
-    if r.returncode != 0:
-        subprocess.run([str(_WEASYPRINT_PIP), "install", "weasyprint"], capture_output=True)
+_SCRIPTS_PIP = SCRIPTS_VENV / "bin" / "pip"
+if _SCRIPTS_PIP.exists():
+    for _pkg in ["weasyprint", "pandas", "openpyxl", "pymupdf"]:
+        r = subprocess.run([str(_SCRIPTS_PIP), "show", _pkg], capture_output=True)
+        if r.returncode != 0:
+            subprocess.run([str(_SCRIPTS_PIP), "install", _pkg], capture_output=True)
 
 if not SCRIPTS_CATALOG.exists():
     SCRIPTS_CATALOG.write_text("# Scripts Catalog\n\nReusable Python scripts. Created/maintained by the Python Runner agent.\n")
