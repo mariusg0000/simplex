@@ -7,12 +7,17 @@ from src.engine.tools import tool
 from src.engine.agents import ToolCapableAgent, activity_callback
 
 _PDF_ROLE_PROMPT = (
-    "You are a PDF generation specialist. You ONLY create PDFs using weasyprint.\n"
+    "You are a PDF generation specialist. You ONLY create PDFs using the weasyprint Python library.\n"
+    "\n"
+    "WEASYPRINT (pre-installed in scripts venv, python resolves automatically):\n"
+    "Convert HTML to PDF via Python: python -c "
+    "\"from weasyprint import HTML; HTML('input.html').write_pdf('output.pdf')\"\n"
+    "Stderr shows CSS warnings; parse and fix them.\n"
     "\n"
     "WORKFLOW:\n"
     "1. Write HTML with inline CSS\n"
-    "2. Convert: weasyprint input.html output.pdf\n"
-    "3. Parse stderr for warnings, fix CSS, retry (max 10)\n"
+    "2. Convert using the Python command above\n"
+    "3. Parse stderr for CSS warnings, fix CSS, retry (max 10)\n"
     "4. Validate output file exists (ls -la)\n"
     "5. Return absolute path\n"
     "\n"
@@ -20,8 +25,14 @@ _PDF_ROLE_PROMPT = (
     "- Use heredoc in bash: cat > file.html << 'EOF' ... EOF\n"
     "- Save in working directory (~/.simplexai/)\n"
     "\n"
-    "INSTALLING:\n"
-    "- pip via scripts/.venv/bin/pip\n"
+    "CSS CONSTRAINTS:\n"
+    "- NO flex, grid, gap, box-shadow, background-clip\n"
+    "- Layouts: classic HTML tables only\n"
+    "- Spacing: margin/padding only\n"
+    "- Page-break elements must stay in normal flow\n"
+    "- position:absolute reserved for decorative elements (cm/mm)\n"
+    "- @page: define size (A4) and margins\n"
+    "- Declare fonts explicitly with proper language support\n"
     "\n"
     "RULES:\n"
     "- Always validate the PDF after creation (ls -la)\n"
@@ -39,7 +50,7 @@ def _get_pdf_agent() -> ToolCapableAgent:
             name="PdfAgent",
             role_prompt=_PDF_ROLE_PROMPT,
             allowed_tools=["bash"],
-            allowed_cli=["weasyprint", "pandoc_write"],
+            allowed_cli=["pandoc_write"],
         )
     return _pdf_agent_instance
 

@@ -21,7 +21,7 @@ from src.prompts import load_cli_prompts
 _system_env_cache: Optional[str] = None
 
 EXCLUDED_CLI: set[str] = {
-    "weasyprint", "pandoc_write",
+    "pandoc_write",
 }
 active_task: Optional[asyncio.Task] = None
 
@@ -32,9 +32,10 @@ sub_agent_content: Optional[ui.column] = None
 
 
 def clear_sub_agent_log():
-    sub_agent_log.clear()
+    """Adaugă separator între run-uri — nu șterge nimic."""
     if sub_agent_content:
-        sub_agent_content.clear()
+        with sub_agent_content:
+            ui.separator().classes("my-0.5 opacity-30")
 
 
 def make_sub_agent_callback() -> Callable[[AgentStep], None]:
@@ -52,8 +53,17 @@ def make_sub_agent_callback() -> Callable[[AgentStep], None]:
                     "error": "❌",
                     "done": "🏁",
                 }.get(step.step_type, "•")
-                line = f"[{step.timestamp}] {icon} [{step.agent_name}] Round {step.round}: {step.step_type} — {step.content[:120]}"
+                max_chars = 200 if step.step_type == "tool_call" else 150
+                content = step.content[:max_chars]
+                line = f"[{step.timestamp}] {icon} [{step.agent_name}] R{step.round}: {content}"
                 ui.label(line).classes("text-[11px] font-mono text-gray-600 leading-5 py-0.5")
+                try:
+                    sub_agent_content.client.run_javascript("""
+                        const el = document.querySelector('.sub-agent-expansion .q-expansion-item__content');
+                        if (el) el.scrollTop = el.scrollHeight;
+                    """)
+                except Exception:
+                    pass
     return _on_step
 chat_title: str = "New Chat"
 current_session_id: str = ""
@@ -86,7 +96,6 @@ TOOL_PACKAGES: dict[str, str] = {
     "pandoc_write": "pandoc",
     "pandas": "",
     "tesseract": "tesseract-ocr",
-    "weasyprint": "weasyprint",
 }
 
 

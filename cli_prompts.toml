@@ -89,29 +89,4 @@ CSV:   python -c "import pandas; print(pandas.read_csv('file.csv').to_string())"
 Options: sheet_name='Sheet1' for specific sheet, nrows=50 to limit rows.
 """
 
-[weasyprint]
-prompt = """
-weasyprint — Create PDF documents — When the user requests any document (report, invoice, letter, certificate, form, etc.): first generate the content as a well-structured HTML file, then convert it to PDF using weasyprint.
-
-CSS CONSTRAINTS
-• NO flex, grid, gap, box-shadow, background-clip — use solid colors only
-• Layouts: classic HTML tables only
-• Spacing: margin/padding only
-• Covers/variable pages: min-height, not fixed height (prevents overflow)
-• Page-break elements must stay in normal flow
-• position:absolute reserved for isolated decorative elements using cm/mm
-
-@page SETUP
-• Define dimensions: @page { size: A4; margin: ... }
-• Calculate available vertical space carefully — wrong math causes blank pages
-
-FONT
-• Declare fonts explicitly and verify they support language-specific characters (diacritics, accents, special glyphs for the target language)
-
-AUTO-CORRECTION LOOP (MANDATORY)
-• Parse stderr for unknown property warnings after each run
-• Remove/adapt offending CSS and re-execute
-• Max 10 retries
-• If warnings persist after 10 attempts: STOP, ask user whether to continue troubleshooting or switch approach
-"""
 
