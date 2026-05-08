@@ -37,13 +37,14 @@ from src.ui.app import init_ui
 
 # Import tool modules to register them with the tool registry
 import src.engine.builtin_tools   # noqa: F401
+import src.engine.file_open       # noqa: F401
 import src.engine.bash_tool       # noqa: F401
 import src.engine.pdf_tool        # noqa: F401
 
-# Disable all tools except bash
+# Disable all tools except bash and open_file
 from src.engine.tools import registry
 for tool_name in list(registry.tools.keys()):
-    if tool_name != "bash":
+    if tool_name not in ("bash", "open_file"):
         registry.disable(tool_name)
 
 registry.enable("create_pdf")
