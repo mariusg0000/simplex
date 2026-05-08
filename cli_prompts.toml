@@ -7,52 +7,52 @@
 # Supports multiline with """...""" or '''...''' (TOML triple quotes).
 
 [rg]
-prompt = "rg — Fast text search in plain-text files — Use rg. Forbidden: `grep`."
+prompt = "rg — Fast text search in plain-text files — rg <pattern> [path]. Use -l to list only matching filenames, -i for case-insensitive, -n for line numbers, -c for match count. Use -g <glob> to filter by filename pattern. Forbidden: `grep`."
 
 [fd]
-prompt = "fd — Fast file/directory search by name — Use fd. Forbidden: `find`."
+prompt = "fd — Fast file/directory search by name — fd <pattern> [path]. Use -t f for files only, -t d for directories only, -e <ext> for extension filter, -H for hidden files. Supports regex patterns by default. Forbidden: `find`."
 
 [sd]
-prompt = "sd — Find & Replace text — Use sd. Forbidden: `sed`."
+prompt = "sd — Find & Replace text — sd '<pattern>' '<replacement>' <file...>. Performs in-place replacement by default. Use -p for preview (dry-run, shows changes without writing). Use -F to treat pattern as a literal string (no regex). Forbidden: `sed`."
 
 [bat]
-prompt = "bat — File reader with line numbers and syntax highlighting — Use bat -n. Forbidden: `cat`."
+prompt = "bat — File reader with line numbers and syntax highlighting — bat -n <file>. Use --style=plain to strip decorations (line numbers, header), --paging=never for non-interactive output, -l <lang> to force syntax language. Forbidden: `cat`."
 
 [mlr]
-prompt = "mlr — Structured CSV/TSV data processing — Use mlr --csv. Forbidden: `awk`, `cut`."
+prompt = "mlr — Structured CSV/TSV/JSON data processing — Generate Excel-ready data from JSON: mlr --j2c unflatten input.json > data.csv (flattens nested JSON into columns/rows that Excel opens natively). Filter: mlr --csv filter '$col > 100'. Cut columns: mlr --csv cut -f col1,col2. Sort: mlr --csv sort -f col. Stats: mlr --csv stats1 -f col. Group: mlr --csv stats1 -f val -g key. Use --tsv for TSV, --c2j for CSV to JSON. Forbidden: `awk`, `cut`."
 
 [trash-put]
-prompt = "trash-put — Move files to Recycle Bin — Use trash-put. Forbidden: `rm`."
+prompt = "trash-put — Move files to trash/recycle bin instead of permanent deletion — trash-put <file...>. Recoverable via system trash manager. Forbidden: `rm`."
 
 [exiftool]
-prompt = "exiftool — Extract file metadata (creator, dates, camera info) — Use exiftool."
+prompt = "exiftool — Extract and edit file metadata — exiftool <file> for all metadata. Extract specific tags: exiftool -TAG <file> (e.g. -CreateDate, -Author, -GPSPosition). Write tags: exiftool -TAG=\"value\" <file>. Write to new file (preserve original): exiftool -o <output> -TAG=\"value\" <input>. Common tags: -Title, -Author, -Subject, -Keywords, -Description. For dates: -CreateDate, -ModifyDate. For GPS: -GPSLatitude, -GPSLongitude. Use -csv for tabular output, -j for JSON."
 
 [pdftotext]
-prompt = "pdftotext — Extract text from PDFs (preserve layout with -layout flag) — Use pdftotext -layout."
+prompt = "pdftotext — Extract text from PDFs — pdftotext -layout <input.pdf> [output.txt] preserves spatial layout. For specific pages: -f <first> -l <last>. Use -nopgbrk to remove page break markers. For non-ASCII text, specify encoding with -enc UTF-8."
 
 [pdfinfo]
-prompt = "pdfinfo — Display PDF metadata (pages, author, dimensions, security) — Use pdfinfo."
+prompt = "pdfinfo — Display PDF metadata: pages, author, title, dimensions, security status — pdfinfo <file.pdf>."
 
 [pdfunite]
-prompt = "pdfunite — Merge multiple PDFs into one — Use pdfunite."
+prompt = "pdfunite — Merge multiple PDFs into one — pdfunite <in1.pdf> <in2.pdf> ... <out.pdf>. Order of input files is significant."
 
 [pdfseparate]
-prompt = "pdfseparate — Extract individual pages from a PDF — Use pdfseparate."
+prompt = "pdfseparate — Extract individual pages from a PDF — pdfseparate <input.pdf> <output-%d.pdf>. Use -f <N> for first page, -l <N> for last page. Output pattern uses printf formatting (%d = page number)."
 
 [pdftoppm]
-prompt = "pdftoppm — Convert PDF pages to images (PNG, JPEG, TIFF) — Use pdftoppm."
+prompt = "pdftoppm — Convert PDF pages to images — pdftoppm <input.pdf> <output_prefix>. Format: -png (lossless, default), -jpeg, -tiff. For print-quality use -r 300 (DPI). Page range: -f <first> -l <last>. Use -singlefile for single-page PDFs (avoids the -1 suffix). Use -cropbox for full media box."
 
 [pdffonts]
-prompt = "pdffonts — List fonts used in a PDF — Use pdffonts."
+prompt = "pdffonts — List all fonts used in a PDF: name, type, encoding, embedded status — pdffonts <file.pdf>."
 
 [pdfimages]
-prompt = "pdfimages — Extract embedded images from a PDF — Use pdfimages."
+prompt = "pdfimages — Extract embedded images from a PDF — pdfimages <input.pdf> <output_prefix>. By default extracts as PPM/PBM. Use -j for JPEG, -png for PNG, -all for all image types. Page range: -f <first> -l <last>. Use -list to only list images without extracting."
 
 [pandoc]
-prompt = "pandoc — Convert between document formats (.md, .docx, etc.) — Use pandoc."
+prompt = "pandoc — Convert between document formats — pandoc <input> -f <from> -t <to> -o <output>. Key formats: markdown, html, docx, odt, latex, pdf, epub, plain. Common conversions: .md → .docx (pandoc -f markdown -t docx -o out.docx in.md), .docx → .md (reverse). For PDF output specify --pdf-engine=weasyprint. Add metadata: --metadata title=\"Title\". Include a YAML metadata block at the start of markdown files for title, author, date. Use --toc for table of contents, --number-sections for numbered headings. Reference documents for styling: --reference-doc=<file.docx>."
 
 [tesseract]
-prompt = "tesseract — OCR text from images and scanned PDFs — Use tesseract."
+prompt = "tesseract — OCR text from images and scanned PDFs — tesseract <input.png> <output_base>. Page segmentation mode (--psm): 3 = auto (default), 4 = single column of text, 6 = uniform block of text, 11 = sparse text, 12 = sparse with orientation. Language: -l eng for English, -l ron for Romanian, combine with + (e.g. -l eng+ron). For scanned documents: --dpi 300. Output format: .txt (default), add pdf for searchable PDF, hocr for HTML with position data. First convert PDF to images (pdftoppm) then OCR each page."
 
 [weasyprint]
 prompt = """
