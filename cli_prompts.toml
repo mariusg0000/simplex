@@ -15,9 +15,6 @@ prompt = "fd — Fast file/directory search by name — fd <pattern> [path]. Use
 [sd]
 prompt = "sd — Find & Replace text — sd '<pattern>' '<replacement>' <file...>. Performs in-place replacement by default. Use -p for preview (dry-run, shows changes without writing). Use -F to treat pattern as a literal string (no regex). Forbidden: `sed`."
 
-[bat]
-prompt = "bat — File reader with line numbers and syntax highlighting — bat -n <file>. Use --style=plain to strip decorations (line numbers, header), --paging=never for non-interactive output, -l <lang> to force syntax language. Forbidden: `cat`."
-
 [pandoc_read]
 prompt = """
 pandoc — Read / extract text from Office documents — Convert .docx, .odt, .epub, .html files to plain text.

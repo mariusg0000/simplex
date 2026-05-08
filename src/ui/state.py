@@ -81,7 +81,6 @@ TOOL_PACKAGES: dict[str, str] = {
     "rg": "ripgrep",
     "fd": "fd-find",
     "sd": "",
-    "bat": "bat",
     "pandoc_read": "pandoc",
     "pandoc_write": "pandoc",
     "pandas": "",
