@@ -1,0 +1,82 @@
+# Simplex AI — CLI Tool Prompts
+# Each tool found on the system PATH gets its prompt injected into the
+# system prompt under the "SYSTEM ENVIRONMENT" section.
+#
+# To add a new tool: add a [command_name] section with a "prompt" field.
+# The prompt is the full text injected (description + usage + forbidden).
+# Supports multiline with """...""" or '''...''' (TOML triple quotes).
+
+[rg]
+prompt = "rg — Fast text search in plain-text files — Use rg. Forbidden: `grep`."
+
+[fd]
+prompt = "fd — Fast file/directory search by name — Use fd. Forbidden: `find`."
+
+[sd]
+prompt = "sd — Find & Replace text — Use sd. Forbidden: `sed`."
+
+[bat]
+prompt = "bat — File reader with line numbers and syntax highlighting — Use bat -n. Forbidden: `cat`."
+
+[mlr]
+prompt = "mlr — Structured CSV/TSV data processing — Use mlr --csv. Forbidden: `awk`, `cut`."
+
+[trash-put]
+prompt = "trash-put — Move files to Recycle Bin — Use trash-put. Forbidden: `rm`."
+
+[exiftool]
+prompt = "exiftool — Extract file metadata (creator, dates, camera info) — Use exiftool."
+
+[pdftotext]
+prompt = "pdftotext — Extract text from PDFs (preserve layout with -layout flag) — Use pdftotext -layout."
+
+[pdfinfo]
+prompt = "pdfinfo — Display PDF metadata (pages, author, dimensions, security) — Use pdfinfo."
+
+[pdfunite]
+prompt = "pdfunite — Merge multiple PDFs into one — Use pdfunite."
+
+[pdfseparate]
+prompt = "pdfseparate — Extract individual pages from a PDF — Use pdfseparate."
+
+[pdftoppm]
+prompt = "pdftoppm — Convert PDF pages to images (PNG, JPEG, TIFF) — Use pdftoppm."
+
+[pdffonts]
+prompt = "pdffonts — List fonts used in a PDF — Use pdffonts."
+
+[pdfimages]
+prompt = "pdfimages — Extract embedded images from a PDF — Use pdfimages."
+
+[pandoc]
+prompt = "pandoc — Convert between document formats (.md, .docx, etc.) — Use pandoc."
+
+[tesseract]
+prompt = "tesseract — OCR text from images and scanned PDFs — Use tesseract."
+
+[weasyprint]
+prompt = """
+weasyprint — Create PDF documents — When the user requests any document (report, invoice, letter, certificate, form, etc.): first generate the content as a well-structured HTML file, then convert it to PDF using weasyprint.
+
+CSS CONSTRAINTS
+• NO flex, grid, gap, box-shadow, background-clip — use solid colors only
+• Layouts: classic HTML tables only
+• Spacing: margin/padding only
+• Covers/variable pages: min-height, not fixed height (prevents overflow)
+• Page-break elements must stay in normal flow
+• position:absolute reserved for isolated decorative elements using cm/mm
+
+@page SETUP
+• Define dimensions: @page { size: A4; margin: ... }
+• Calculate available vertical space carefully — wrong math causes blank pages
+
+FONT
+• Declare fonts explicitly and verify they support language-specific characters (diacritics, accents, special glyphs for the target language)
+
+AUTO-CORRECTION LOOP (MANDATORY)
+• Parse stderr for unknown property warnings after each run
+• Remove/adapt offending CSS and re-execute
+• Max 10 retries
+• If warnings persist after 10 attempts: STOP, ask user whether to continue troubleshooting or switch approach
+"""
+

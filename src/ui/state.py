@@ -4,34 +4,17 @@ src/ui/state.py · Shared application state · Holds globals accessed by UI comp
 
 import os
 import shutil
+import tomllib
 import uuid
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from src.config import settings
 
-TOOL_TABLE: list[tuple[str, str, str, list[str]]] = [
-    ("rg", "Fast text search in plain-text files", "Use rg.", ["grep"]),
-    ("fd", "Fast file/directory search by name", "Use fd.", ["find"]),
-    ("sd", "Find & Replace text", "Use sd.", ["sed"]),
-    ("bat", "File reader with line numbers and syntax highlighting", "Use bat -n.", ["cat"]),
-    ("mlr", "Structured CSV/TSV data processing", "Use mlr --csv.", ["awk", "cut"]),
-    ("trash-put", "Move files to Recycle Bin", "Use trash-put.", ["rm"]),
-    ("exiftool", "Extract file metadata (creator, dates, camera info)", "Use exiftool.", []),
-    ("pdftotext", "Extract text from PDFs (preserve layout with -layout flag)", "Use pdftotext -layout.", []),
-    ("pdfinfo", "Display PDF metadata (pages, author, dimensions, security)", "Use pdfinfo.", []),
-    ("pdfunite", "Merge multiple PDFs into one", "Use pdfunite.", []),
-    ("pdfseparate", "Extract individual pages from a PDF", "Use pdfseparate.", []),
-    ("pdftoppm", "Convert PDF pages to images (PNG, JPEG, TIFF)", "Use pdftoppm.", []),
-    ("pdffonts", "List fonts used in a PDF", "Use pdffonts.", []),
-    ("pdfimages", "Extract embedded images from a PDF", "Use pdfimages.", []),
-    ("pandoc", "Convert between document formats (.md, .docx, etc.)", "Use pandoc.", []),
-    ("tesseract", "OCR text from images and scanned PDFs", "Use tesseract.", []),
-    ("weasyprint", "Convert HTML/CSS to PDF", "Use weasyprint input.html output.pdf. CSS constraints: use tables exclusively for layout, position:absolute for covers, margin/padding for spacing. Strictly avoid flex, grid, gap, box-shadow, height:100%. If warnings appear in stderr, auto-correct the HTML/CSS and re-execute until zero warnings.", []),
-    ("xdg-open", "Open files/directories/URLs with the system default application", "When user asks to open a file, use xdg-open.", []),
-]
-
+_CLI_PROMPTS_PATH = Path(__file__).resolve().parent.parent.parent / "cli_prompts.toml"
+_cli_prompts_cache: Optional[dict[str, str]] = None
 _system_env_cache: Optional[str] = None
 active_task: Optional[asyncio.Task] = None
 chat_title: str = "New Chat"
@@ -65,6 +48,20 @@ TOOL_PACKAGES: dict[str, str] = {
 }
 
 
+def load_cli_prompts() -> dict[str, str]:
+    """Load CLI tool prompts from cli_prompts.toml. Cached after first read."""
+    global _cli_prompts_cache
+    if _cli_prompts_cache is not None:
+        return _cli_prompts_cache
+    try:
+        with open(_CLI_PROMPTS_PATH, "rb") as f:
+            data = tomllib.load(f)
+        _cli_prompts_cache = {k: v["prompt"] for k, v in data.items()}
+    except (FileNotFoundError, KeyError, tomllib.TOMLDecodeError):
+        _cli_prompts_cache = {}
+    return _cli_prompts_cache
+
+
 def find_tool(cmd: str) -> str | None:
     """Check if a tool is installed, trying aliases if the primary name is not found."""
     path = shutil.which(cmd)
@@ -95,14 +92,11 @@ def _build_env_section() -> str:
     if _system_env_cache is not None:
         return _system_env_cache
 
+    prompts = load_cli_prompts()
     lines = []
-    for cmd, desc, rule, banned in TOOL_TABLE:
-        if shutil.which(cmd) is not None:
-            if banned:
-                forbidden = ", ".join(f"`{b}`" for b in banned)
-                lines.append(f"{cmd} — {desc} — {rule} Forbidden: {forbidden}.")
-            else:
-                lines.append(f"{cmd} — {desc} — {rule}")
+    for cmd, prompt in prompts.items():
+        if find_tool(cmd) is not None:
+            lines.append(prompt)
 
     section = "\n".join(lines) if lines else ""
     _system_env_cache = section

@@ -6,7 +6,7 @@ from nicegui import ui
 from src.ui import state
 from src.ui.chat_view import refresh_chat_display
 from src.storage import storage
-from src.ui.state import TOOL_TABLE, build_install_command, find_tool
+from src.ui.state import build_install_command, find_tool, load_cli_prompts
 
 
 def create_settings_dialog(on_style_change=None):
@@ -70,7 +70,7 @@ def create_settings_dialog(on_style_change=None):
 
         ui.separator().classes('my-3')
         ui.label('Installed Tools').classes('text-sm font-semibold text-gray-500 mb-1')
-        for cmd, _, _, _ in TOOL_TABLE:
+        for cmd in load_cli_prompts():
             installed = find_tool(cmd) is not None
             with ui.row().classes('w-full items-center gap-2 py-0.5'):
                 color = 'black' if installed else 'red-800'
