@@ -49,7 +49,27 @@ prompt = "pdffonts — List all fonts used in a PDF: name, type, encoding, embed
 prompt = "pdfimages — Extract embedded images from a PDF — pdfimages <input.pdf> <output_prefix>. By default extracts as PPM/PBM. Use -j for JPEG, -png for PNG, -all for all image types. Page range: -f <first> -l <last>. Use -list to only list images without extracting."
 
 [pandoc]
-prompt = "pandoc — Convert between document formats — pandoc <input> -f <from> -t <to> -o <output>. Key formats: markdown, html, docx, odt, latex, pdf, epub, plain. Common conversions: .md → .docx (pandoc -f markdown -t docx -o out.docx in.md), .docx → .md (reverse). For PDF output specify --pdf-engine=weasyprint. Add metadata: --metadata title=\"Title\". Include a YAML metadata block at the start of markdown files for title, author, date. Use --toc for table of contents, --number-sections for numbered headings. Reference documents for styling: --reference-doc=<file.docx>."
+prompt = """
+pandoc — Create professional Office documents — When the user requests any document in Word, LibreOffice, or PowerPoint format (.docx, .odt, .pptx): first generate well-structured Markdown (.md) with YAML frontmatter and optional JSON metadata, then convert with pandoc. NOTE: PDF documents are created exclusively with weasyprint, not pandoc.
+
+WORKFLOW
+1. Write content as Markdown with YAML frontmatter (title, author, date)
+2. Optional: create metadata JSON for document properties
+3. Convert: pandoc content.md [--metadata-file=meta.json] -o output.docx
+
+JSON WORKFLOWS
+• Metadata injection: --metadata-file=meta.json auto-fills Title, Author, Date in Word properties
+• Template variables: -V recipient="Name" → $recipient$ in Markdown gets replaced at compile time
+• JSON → tables: mlr --j2m cat data.json > table.md && pandoc table.md -o data.docx
+• AST manipulation: pandoc doc.md -t json → restructure with jq → pandoc -f json -o final.docx
+
+STRUCTURE & STYLING
+• Markdown files start with YAML frontmatter for title, author, date, abstract, keywords
+• --toc adds table of contents, --number-sections numbers headings
+• --reference-doc=<template.docx> applies Word theme, fonts, and styles from a reference file
+
+KEY FORMATS: .docx, .odt, .pptx, .epub, .html
+"""
 
 [tesseract]
 prompt = "tesseract — OCR text from images and scanned PDFs — tesseract <input.png> <output_base>. Page segmentation mode (--psm): 3 = auto (default), 4 = single column of text, 6 = uniform block of text, 11 = sparse text, 12 = sparse with orientation. Language: -l eng for English, -l ron for Romanian, combine with + (e.g. -l eng+ron). For scanned documents: --dpi 300. Output format: .txt (default), add pdf for searchable PDF, hocr for HTML with position data. First convert PDF to images (pdftoppm) then OCR each page."
