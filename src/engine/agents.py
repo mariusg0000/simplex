@@ -127,8 +127,11 @@ class ToolCapableAgent:
         task_input: str,
         model_override: Optional[str] = None,
         on_step: Optional[Callable[[AgentStep], None]] = None,
+        dynamic_context: Optional[str] = None,
     ) -> str:
         system_prompt = self._build_system_prompt()
+        if dynamic_context:
+            system_prompt += "\n\n" + dynamic_context
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": task_input},
@@ -137,8 +140,6 @@ class ToolCapableAgent:
         for round_num in range(1, self.max_rounds + 1):
             try:
                 schemas = self._get_allowed_schemas()
-                if on_step:
-                    on_step(AgentStep(self.name, round_num, "llm_call", "Calling LLM..."))
 
                 response = await litellm.acompletion(
                     model=model_override or settings.model,
@@ -160,6 +161,11 @@ class ToolCapableAgent:
 
             choice = response.choices[0]
             msg = choice.message
+            reasoning = getattr(msg, "reasoning_content", None) or ""
+
+            if on_step:
+                detail = f"Think: {reasoning[:180]}..." if reasoning else "Calling LLM..."
+                on_step(AgentStep(self.name, round_num, "llm_call", detail))
 
             if not msg.tool_calls:
                 content = msg.content or ""
@@ -168,8 +174,8 @@ class ToolCapableAgent:
                 return content
 
             assistant_msg = {"role": "assistant", "content": msg.content or None}
-            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
-                assistant_msg["reasoning_content"] = msg.reasoning_content
+            if reasoning:
+                assistant_msg["reasoning_content"] = reasoning
 
             formatted_calls = []
             for tc in msg.tool_calls:
@@ -185,7 +191,7 @@ class ToolCapableAgent:
                 name = tc["function"]["name"]
                 raw_args = tc["function"]["arguments"]
                 if on_step:
-                    snippet = raw_args[:120] if name == "bash" else ""
+                    snippet = raw_args[:200] if name == "bash" else ""
                     label = f"bash: {snippet}..." if snippet else f"{name}(...)"
                     on_step(AgentStep(self.name, round_num, "tool_call", label))
 

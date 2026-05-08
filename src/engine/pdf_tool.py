@@ -2,6 +2,7 @@
 src/engine/pdf_tool.py · PdfAgent + create_pdf tool · Specialized PDF generation via weasyprint.
 """
 
+from pathlib import Path
 from typing import Optional
 from src.engine.tools import tool
 from src.engine.agents import ToolCapableAgent, activity_callback
@@ -43,7 +44,43 @@ _PDF_ROLE_PROMPT = (
     "RULES:\n"
     "- Always validate the PDF after creation (ls -la)\n"
     "- If warnings persist after 10 retries, return the best attempt\n"
-    "- Return ONLY the absolute path, nothing else"
+    "- Return ONLY the absolute path, nothing else\n"
+    "\n"
+    "EXPERIENCE (self-learning):\n"
+    "Your experience file at ~/.simplexai/experience/pdf_agent.md is reloaded before every task.\n"
+    "\n"
+    "AFTER validating the PDF (ls -la) and BEFORE returning the path, you MUST:\n"
+    "\n"
+    "1. ANALYZE this task:\n"
+    "   - Which CSS warnings appeared and how were they fixed?\n"
+    "   - How many retries? What caused each retry?\n"
+    "   - Which layout/CSS strategy worked best?\n"
+    "   - Any new techniques or pitfalls discovered?\n"
+    "\n"
+    "2. READ existing experience:\n"
+    "   python -c \"from pathlib import Path; f=Path.home()/'.simplexai'/'experience'/'pdf_agent.md'; print(f.read_text() if f.exists() else '')\"\n"
+    "\n"
+    "3. DECIDE what to add:\n"
+    "   - A lesson is NEW only if no existing entry covers the same insight\n"
+    "   - If ALL insights already exist in the file, skip writing entirely\n"
+    "   - NEVER remove, contradict, or rephrase existing entries — only append\n"
+    "\n"
+    "4. WRITE merged experience (only if genuinely new lessons found):\n"
+    "   cat > ~/.simplexai/experience/pdf_agent.md << 'ENDOFFILE'\n"
+    "   [existing content — keep entirely as-is]\n"
+    "   \n"
+    "   ## Lessons from [current date]\n"
+    "   - [new insight, 1-2 sentences]\n"
+    "   ENDOFFILE\n"
+    "\n"
+    "5. CONSTRAINTS:\n"
+    "   - Maximum total: ~3000 words\n"
+    "   - If merging would exceed, compress older entries (shorten bullets, keep headings)\n"
+    "   - Group by: ## CSS Fixes, ## Layout Patterns, ## Workflow Tips, ## Common Pitfalls\n"
+    "   - Each lesson = 1-3 concise sentences\n"
+    "   - If nothing new to add → do NOT touch the file at all\n"
+    "\n"
+    "6. Finally return the PDF absolute path as specified in RULES."
 )
 
 _pdf_agent_instance = None
@@ -76,5 +113,10 @@ async def create_pdf(description: str, reference_pdf: Optional[str] = None) -> s
     if reference_pdf:
         task = f"{description}\n\nPrevious attempt was at {reference_pdf}. Read the file and fix the issues."
 
+    exp_file = Path.home() / ".simplexai" / "experience" / "pdf_agent.md"
+    exp_file.parent.mkdir(parents=True, exist_ok=True)
+    exp_content = exp_file.read_text() if exp_file.exists() else "None yet — first task."
+    dynamic_context = f"PRIOR EXPERIENCE:\n{exp_content}"
+
     on_step = activity_callback.get()
-    return await agent.run(task, on_step=on_step)
+    return await agent.run(task, on_step=on_step, dynamic_context=dynamic_context)
