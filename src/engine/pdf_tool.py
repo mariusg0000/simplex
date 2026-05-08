@@ -44,12 +44,15 @@ _PDF_ROLE_PROMPT = (
     "RULES:\n"
     "- Always validate the PDF after creation (ls -la)\n"
     "- If warnings persist after 10 retries, return the best attempt\n"
-    "- Return ONLY the absolute path, nothing else\n"
+    "- When done, call task_done(result='/absolute/path.pdf')\n"
     "\n"
-    "EXPERIENCE (self-learning):\n"
-    "Your experience file at ~/.simplexai/experience/pdf_agent.md is reloaded before every task.\n"
+    "POST-TASK RULES (Self-Learning):\n"
+    "Your accumulated self-learning experience is stored at ~/.simplexai/experience/pdf_agent.md.\n"
+    "This file contains lessons learned from ALL past tasks — CSS fixes, layout patterns,\n"
+    "common pitfalls — built up over time through self-learning. It is reloaded before every \n"
+    "task (see PRIOR EXPERIENCE section below) and updated after each task.\n"
     "\n"
-    "AFTER validating the PDF (ls -la) and BEFORE returning the path, you MUST:\n"
+    "AFTER validating the PDF (ls -la) and BEFORE calling task_done(), you MUST:\n"
     "\n"
     "1. ANALYZE this task:\n"
     "   - Which CSS warnings appeared and how were they fixed?\n"
@@ -80,7 +83,7 @@ _PDF_ROLE_PROMPT = (
     "   - Each lesson = 1-3 concise sentences\n"
     "   - If nothing new to add → do NOT touch the file at all\n"
     "\n"
-    "6. Finally return the PDF absolute path as specified in RULES."
+    "6. Finally call task_done(result='/absolute/path.pdf')"
 )
 
 _pdf_agent_instance = None
@@ -92,7 +95,7 @@ def _get_pdf_agent() -> ToolCapableAgent:
         _pdf_agent_instance = ToolCapableAgent(
             name="PdfAgent",
             role_prompt=_PDF_ROLE_PROMPT,
-            allowed_tools=["bash"],
+            allowed_tools=["bash", "task_done"],
             allowed_cli=["pandoc_write", "fd", "rg"],
         )
     return _pdf_agent_instance

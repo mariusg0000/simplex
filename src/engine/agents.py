@@ -10,7 +10,13 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Set, Callable
 import litellm
 from src.config import settings
-from src.engine.tools import registry
+from src.engine.tools import tool, registry
+
+
+@tool
+def task_done(result: str) -> str:
+    """Signal task completion. Call this when your task is finished, passing the result (e.g. file path)."""
+    return result  # Intercepted in ToolCapableAgent.run(), never executed here
 
 
 @dataclass
@@ -99,7 +105,7 @@ class ToolCapableAgent:
         role_prompt: str,
         allowed_tools: Optional[list[str]] = None,
         allowed_cli: Optional[list[str]] = None,
-        max_rounds: int = 15,
+        max_rounds: int = 20,
     ):
         self.name = name
         self.role_prompt = role_prompt
@@ -137,7 +143,9 @@ class ToolCapableAgent:
             {"role": "user", "content": task_input},
         ]
 
-        for round_num in range(1, self.max_rounds + 1):
+        round_num = 1
+        gave_fallback = False
+        while round_num <= self.max_rounds:
             try:
                 schemas = self._get_allowed_schemas()
 
@@ -190,6 +198,16 @@ class ToolCapableAgent:
             for tc in formatted_calls:
                 name = tc["function"]["name"]
                 raw_args = tc["function"]["arguments"]
+
+                if name == "task_done":
+                    args = json.loads(raw_args)
+                    result = args.get("result", "")
+                    if on_step:
+                        on_step(AgentStep(self.name, round_num, "tool_call", f"task_done({result[:100]})"))
+                    if on_step:
+                        on_step(AgentStep(self.name, round_num, "done", result[:200]))
+                    return result
+
                 if on_step:
                     snippet = raw_args[:200] if name == "bash" else ""
                     label = f"bash: {snippet}..." if snippet else f"{name}(...)"
@@ -213,6 +231,16 @@ class ToolCapableAgent:
                     "name": name,
                     "content": result_str,
                 })
+
+            if round_num == self.max_rounds and not gave_fallback:
+                messages.append({
+                    "role": "user",
+                    "content": "Maximum attempts reached. Document any new lessons in the experience file, then call task_done(result='...'). Do NOT continue working on the task — just document and exit."
+                })
+                self.max_rounds += 1
+                gave_fallback = True
+
+            round_num += 1
 
         msg = "Error: Max rounds reached without final response."
         if on_step:
