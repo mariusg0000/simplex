@@ -25,6 +25,12 @@ _PDF_ROLE_PROMPT = (
     "- Use heredoc in bash: cat > file.html << 'EOF' ... EOF\n"
     "- Save in working directory (~/.simplexai/)\n"
     "\n"
+    "FILE OPERATIONS (via bash):\n"
+    "- Read files: python -c \"print(open('file').read())\"\n"
+    "- Search files by name: fd <pattern> [path]\n"
+    "- Search file contents: rg <pattern> [path]\n"
+    "- Create directories: mkdir -p <dir>\n"
+    "\n"
     "CSS CONSTRAINTS:\n"
     "- NO flex, grid, gap, box-shadow, background-clip\n"
     "- Layouts: classic HTML tables only\n"
@@ -50,7 +56,7 @@ def _get_pdf_agent() -> ToolCapableAgent:
             name="PdfAgent",
             role_prompt=_PDF_ROLE_PROMPT,
             allowed_tools=["bash"],
-            allowed_cli=["pandoc_write"],
+            allowed_cli=["pandoc_write", "fd", "rg"],
         )
     return _pdf_agent_instance
 
