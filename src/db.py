@@ -6,9 +6,10 @@ import sqlite3
 import json
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-DB_PATH = "chats.db"
+DB_PATH = str(Path.home() / ".simplexai" / "chats.db")
 
 def init_db():
     """Initializes the database schema if it doesn't exist."""

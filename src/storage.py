@@ -28,7 +28,7 @@ class StorageManager:
     HOW:     Uses a fixed file path 'user_settings.json'.
     """
     def __init__(self, filename: str = "user_settings.json"):
-        self.file_path = Path(filename)
+        self.file_path = Path.home() / ".simplexai" / filename
         self.prefs = self.load()
 
     def load(self) -> UserPreferences:

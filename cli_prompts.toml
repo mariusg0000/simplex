@@ -48,11 +48,17 @@ prompt = "pdffonts — List all fonts used in a PDF: name, type, encoding, embed
 [pdfimages]
 prompt = "pdfimages — Extract embedded images from a PDF — pdfimages <input.pdf> <output_prefix>. By default extracts as PPM/PBM. Use -j for JPEG, -png for PNG, -all for all image types. Page range: -f <first> -l <last>. Use -list to only list images without extracting."
 
-[pandoc]
+[pandoc_read]
 prompt = """
-pandoc — Create professional Office documents — When the user requests any document in Word, LibreOffice, or PowerPoint format (.docx, .odt, .pptx): first generate well-structured Markdown (.md) with YAML frontmatter and optional JSON metadata, then convert with pandoc. NOTE: PDF documents are created exclusively with weasyprint, not pandoc.
+pandoc — Read / extract text from Office documents — Convert .docx, .odt, .epub, .html files to plain text.
+WORKFLOW: pandoc <file> -t plain   (outputs plain text to stdout)
+Use -t markdown for Markdown output.
+Only for reading document content. For creating documents, use pandoc_write (delegated to specialized agents).
+"""
 
-WORKFLOW
+[pandoc_write]
+prompt = """
+pandoc — Create Office documents from Markdown — Generate .docx, .odt, .pptx, .epub, .html.
 1. Write content as Markdown with YAML frontmatter (title, author, date)
 2. Optional: create metadata JSON for document properties
 3. Convert: pandoc content.md [--metadata-file=meta.json] -o output.docx
@@ -69,10 +75,19 @@ STRUCTURE & STYLING
 • --reference-doc=<template.docx> applies Word theme, fonts, and styles from a reference file
 
 KEY FORMATS: .docx, .odt, .pptx, .epub, .html
+NOTE: PDF documents are created exclusively with weasyprint, not pandoc.
 """
 
 [tesseract]
 prompt = "tesseract — OCR text from images and scanned PDFs — tesseract <input.png> <output_base>. Page segmentation mode (--psm): 3 = auto (default), 4 = single column of text, 6 = uniform block of text, 11 = sparse text, 12 = sparse with orientation. Language: -l eng for English, -l ron for Romanian, combine with + (e.g. -l eng+ron). For scanned documents: --dpi 300. Output format: .txt (default), add pdf for searchable PDF, hocr for HTML with position data. First convert PDF to images (pdftoppm) then OCR each page."
+
+[pandas]
+prompt = """
+pandas — Read Excel/CSV files via Python — Use bash with the scripts venv Python (pandas + openpyxl pre-installed).
+Excel: python -c "import pandas; print(pandas.read_excel('file.xlsx').to_string())"
+CSV:   python -c "import pandas; print(pandas.read_csv('file.csv').to_string())"
+Options: sheet_name='Sheet1' for specific sheet, nrows=50 to limit rows.
+"""
 
 [weasyprint]
 prompt = """

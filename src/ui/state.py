@@ -4,19 +4,57 @@ src/ui/state.py · Shared application state · Holds globals accessed by UI comp
 
 import os
 import shutil
-import tomllib
 import uuid
 import asyncio
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Callable
+
+from nicegui import ui
+from src.engine.agents import AgentStep
 
 from src.config import settings
+from src.prompts import load_cli_prompts
 
-_CLI_PROMPTS_PATH = Path(__file__).resolve().parent.parent.parent / "cli_prompts.toml"
-_cli_prompts_cache: Optional[dict[str, str]] = None
 _system_env_cache: Optional[str] = None
+
+EXCLUDED_CLI: set[str] = {
+    "weasyprint", "pandoc_write",
+}
 active_task: Optional[asyncio.Task] = None
+
+# Sub-agent activity log
+sub_agent_log: list[AgentStep] = []
+sub_agent_panel: Optional[ui.expansion] = None
+sub_agent_content: Optional[ui.column] = None
+
+
+def clear_sub_agent_log():
+    sub_agent_log.clear()
+    if sub_agent_content:
+        sub_agent_content.clear()
+
+
+def make_sub_agent_callback() -> Callable[[AgentStep], None]:
+    """Creates a callback that appends to sub_agent_log and updates the UI."""
+    def _on_step(step: AgentStep):
+        sub_agent_log.append(step)
+        if sub_agent_panel and not sub_agent_panel.value:
+            sub_agent_panel.value = True
+        if sub_agent_content:
+            with sub_agent_content:
+                icon = {
+                    "llm_call": "🤔",
+                    "tool_call": "⚡",
+                    "tool_result": "✅",
+                    "error": "❌",
+                    "done": "🏁",
+                }.get(step.step_type, "•")
+                line = f"[{step.timestamp}] {icon} [{step.agent_name}] Round {step.round}: {step.step_type} — {step.content[:120]}"
+                ui.label(line).classes("text-[11px] font-mono text-gray-600 leading-5 py-0.5")
+    return _on_step
 chat_title: str = "New Chat"
 current_session_id: str = ""
 status_label: Any = None
@@ -25,6 +63,8 @@ usage_label: Any = None
 TOOL_ALIASES: dict[str, list[str]] = {
     "fd": ["fdfind"],
     "bat": ["batcat"],
+    "pandoc_read": ["pandoc"],
+    "pandoc_write": ["pandoc"],
 }
 
 TOOL_PACKAGES: dict[str, str] = {
@@ -42,24 +82,12 @@ TOOL_PACKAGES: dict[str, str] = {
     "pdftoppm": "poppler-utils",
     "pdffonts": "poppler-utils",
     "pdfimages": "poppler-utils",
-    "pandoc": "pandoc",
+    "pandoc_read": "pandoc",
+    "pandoc_write": "pandoc",
+    "pandas": "",
     "tesseract": "tesseract-ocr",
     "weasyprint": "weasyprint",
 }
-
-
-def load_cli_prompts() -> dict[str, str]:
-    """Load CLI tool prompts from cli_prompts.toml. Cached after first read."""
-    global _cli_prompts_cache
-    if _cli_prompts_cache is not None:
-        return _cli_prompts_cache
-    try:
-        with open(_CLI_PROMPTS_PATH, "rb") as f:
-            data = tomllib.load(f)
-        _cli_prompts_cache = {k: v["prompt"] for k, v in data.items()}
-    except (FileNotFoundError, KeyError, tomllib.TOMLDecodeError):
-        _cli_prompts_cache = {}
-    return _cli_prompts_cache
 
 
 def find_tool(cmd: str) -> str | None:
@@ -86,6 +114,20 @@ def build_install_command() -> str:
     return f"for pkg in {' '.join(sorted_pkgs)}; do sudo apt install -y \"$pkg\" 2>&1 | tail -2; done"
 
 
+def _python_package_available(package: str) -> bool:
+    """Check if a Python package is importable in the scripts venv."""
+    venv_python = Path.home() / ".simplexai" / "scripts" / ".venv" / "bin" / "python"
+    python = str(venv_python) if venv_python.exists() else sys.executable
+    try:
+        subprocess.run(
+            [python, "-c", f"import {package}"],
+            capture_output=True, timeout=5,
+        )
+        return True
+    except Exception:
+        return False
+
+
 def _build_env_section() -> str:
     """Detects installed modern utilities and builds the SYSTEM ENVIRONMENT section."""
     global _system_env_cache
@@ -95,7 +137,12 @@ def _build_env_section() -> str:
     prompts = load_cli_prompts()
     lines = []
     for cmd, prompt in prompts.items():
-        if find_tool(cmd) is not None:
+        if cmd in EXCLUDED_CLI:
+            continue
+        if cmd == "pandas":
+            if _python_package_available("pandas"):
+                lines.append(prompt)
+        elif find_tool(cmd) is not None:
             lines.append(prompt)
 
     section = "\n".join(lines) if lines else ""
@@ -111,7 +158,10 @@ def get_system_prompt() -> dict:
         content += f"\n\nSYSTEM ENVIRONMENT:\n{env_section}"
     content += (
         f"\n\nCWD: {os.getcwd()}\n"
-        f"Current time: {datetime.now().strftime('%Y-%m-%d %H:00 (%B, %A)')}\n"
+        f"Current time: {datetime.now().strftime('%Y-%m-%d %H:00 (%B, %A)')}\n\n"
+        f"Working directory: ~/.simplexai\n"
+        f"  - .tmp/     -> temporary/intermediate files (auto-cleaned after 30 min)\n"
+        f"  - scripts/  -> reusable Python scripts (see catalog below)\n"
     )
     content += (
         "\nSTRATEGIC GUIDELINES:\n"

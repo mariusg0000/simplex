@@ -6,10 +6,15 @@ WARNING: This tool can execute arbitrary shell commands. Use with caution.
 
 import asyncio
 import logging
+import os
 import re
+from pathlib import Path
 from typing import Optional
 
 from src.engine.tools import tool, registry
+
+SCRIPTS_VENV = Path.home() / ".simplexai" / "scripts" / ".venv"
+SCRIPTS_VENV_BIN = str(SCRIPTS_VENV / "bin")
 
 log = logging.getLogger("simplex.engine.bash_tool")
 
@@ -53,7 +58,7 @@ def _check_dangerous(command: str) -> Optional[str]:
 
 
 @tool
-async def bash(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False) -> str:
+async def bash(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None) -> str:
     """
     Execute a shell command and return its output (stdout + stderr combined).
     Output is truncated at 500 lines or 50 KB to avoid context overflow.
@@ -72,6 +77,7 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
     explanation: str - Plain-language explanation of what this command does (shown to the user).
     timeout: int - Maximum execution time in seconds (default: 30, max: 120).
     need_confirmation: bool - Set to True if the command could be destructive (default: False).
+    workdir: Optional[str] - Working directory for the command (default: None = ~/.simplexai).
     """
     if timeout < 1:
         timeout = 1
@@ -100,11 +106,16 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
     full_command = f"( {command} ); printf '\\n{SENTINEL}:%s\\n' \"$?\""
 
     try:
+        env = os.environ.copy()
+        env["PATH"] = f"{SCRIPTS_VENV_BIN}:{env['PATH']}"
+
         process = await asyncio.create_subprocess_shell(
             full_command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             stdin=asyncio.subprocess.DEVNULL,
+            cwd=workdir,
+            env=env,
         )
 
         try:

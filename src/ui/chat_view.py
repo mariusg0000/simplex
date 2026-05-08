@@ -12,6 +12,7 @@ from src.db import db
 from src.storage import storage
 from src.engine.chat import stream_chat
 from src.engine.tools import registry
+from src.engine.agents import activity_callback
 
 
 def _debug(msg: str):
@@ -127,7 +128,10 @@ async def handle_send():
 
     state.scroll_area.scroll_to(percent=1.0, duration=0.2)
     _debug(f"Created _process_response task. messages count before stream: {len(state.messages)}")
-    state.active_task = asyncio.create_task(_process_response(thinking_indicator=thinking_container))
+    state.active_task = asyncio.create_task(_process_response(
+        thinking_indicator=thinking_container,
+        sub_agent_callback=state.make_sub_agent_callback(),
+    ))
 
 
 _confirm_dialog = None
@@ -186,9 +190,12 @@ async def _show_confirmation_dialog(command: str, explanation: str, danger: str)
     return await _confirm_future
 
 
-async def _process_response(thinking_indicator: ui.element):
+async def _process_response(thinking_indicator: ui.element, sub_agent_callback=None):
     """Streams the LLM response and saves to database at the end."""
     _debug("=== _process_response STARTED ===")
+    state.clear_sub_agent_log()
+    if sub_agent_callback:
+        activity_callback.set(sub_agent_callback)
     state.status_label.set_text("Connecting...")
     try:
         total_response = ""
@@ -307,3 +314,5 @@ async def _process_response(thinking_indicator: ui.element):
         if response_container:
             response_container.set_content((response_container.content or "") + " _(interrupted)_")
         raise
+    finally:
+        activity_callback.set(None)

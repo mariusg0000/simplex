@@ -184,9 +184,18 @@ def init_ui():
             ui.space()
             ui.button(icon="settings", on_click=settings_dialog.open).props("flat color=white dense")
 
-        state.scroll_area = ui.scroll_area().classes("w-full bg-white").style("height: calc(100vh - 130px);")
+        state.scroll_area = ui.scroll_area().classes("w-full bg-white flex-grow min-h-0 overflow-y-auto")
         with state.scroll_area:
             state.chat_content = ui.column().classes("w-full p-4 gap-1")
+
+        state.sub_agent_panel = ui.expansion(
+            text="Sub-Agent Activity", icon="terminal",
+            value=False,
+        ).classes("w-full bg-slate-50 border-t text-xs flex-shrink-0").style(
+            "max-height: 200px; overflow-y: auto;"
+        )
+        with state.sub_agent_panel:
+            state.sub_agent_content = ui.column().classes("w-full px-4 py-1 gap-0")
 
         with ui.row().classes("w-full px-3 text-xs text-slate-400 bg-slate-100 border-t items-center").style("height: 24px; flex-shrink: 0;"):
             state.status_label = ui.label("Ready").classes("flex-grow")
