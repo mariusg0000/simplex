@@ -94,6 +94,52 @@ def init_ui():
             .terminal-content .nicegui-markdown * {{
                 line-height: inherit !important;
             }}
+            .terminal-content .nicegui-markdown p {{
+                margin: 0 0 0.25rem 0 !important;
+                min-height: 0 !important;
+            }}
+            .terminal-content .nicegui-markdown p:last-child {{
+                margin-bottom: 0 !important;
+            }}
+            .terminal-content .nicegui-markdown code {{
+                font-family: inherit !important;
+                font-size: inherit !important;
+                background: transparent !important;
+                color: inherit !important;
+                padding: 0 !important;
+                border: none !important;
+            }}
+            .terminal-content .nicegui-markdown pre {{
+                background: transparent !important;
+                border: none !important;
+                padding: 0 !important;
+                margin: 0 0 0.25rem 0 !important;
+                border-radius: 0 !important;
+            }}
+            .terminal-content .nicegui-markdown pre code {{
+                background: transparent !important;
+                padding: 0 !important;
+                font-size: inherit !important;
+            }}
+            .terminal-content .nicegui-markdown ul,
+            .terminal-content .nicegui-markdown ol {{
+                margin: 0 !important;
+                padding-left: 1.25rem !important;
+            }}
+            .terminal-content .nicegui-markdown li {{
+                margin: 0 !important;
+                line-height: inherit !important;
+            }}
+            .terminal-content .nicegui-markdown blockquote {{
+                margin: 0 0 0.25rem 0 !important;
+                padding: 0 0 0 1rem !important;
+                border-left: 2px solid #d1d5db !important;
+                color: inherit !important;
+            }}
+            .terminal-content .nicegui-markdown hr {{
+                margin: 0.25rem 0 !important;
+                border-color: #d1d5db !important;
+            }}
 
             /* Tight heading scale: 1px difference between levels */
             .nicegui-markdown h1 {{ font-size: 1.125rem !important; line-height: 1.5rem !important; margin: 0.75rem 0 0.375rem 0 !important; font-weight: 600 !important; }}
