@@ -1,9 +1,3 @@
-"""
-src/engine/bash_tool.py · Bash Tool · Executes shell commands and returns output.
-
-WARNING: This tool can execute arbitrary shell commands. Use with caution.
-"""
-
 import asyncio
 import logging
 import os
@@ -11,15 +5,15 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from src.engine.tools import tool, registry
+from src.engine.tools import registry
 
 SCRIPTS_VENV = Path.home() / ".simplexai" / "scripts" / ".venv"
 SCRIPTS_VENV_BIN = str(SCRIPTS_VENV / "bin")
 
-log = logging.getLogger("simplex.engine.bash_tool")
+log = logging.getLogger("simplex.tools.bash")
 
 MAX_LINES = 500
-MAX_CHARS = 50 * 1024  # 50 KB
+MAX_CHARS = 50 * 1024
 SENTINEL = "___EXEC_RESULTS___"
 
 DANGEROUS_PATTERNS: list[tuple[str, str]] = [
@@ -45,10 +39,6 @@ DANGEROUS_PATTERNS: list[tuple[str, str]] = [
 
 
 def _check_dangerous(command: str) -> Optional[str]:
-    """
-    Checks if a command matches known dangerous patterns.
-    Returns a human-readable danger description, or None if safe.
-    """
     cmd_normalized = command.strip().lower()
     reasons = []
     for pattern, description in DANGEROUS_PATTERNS:
@@ -57,28 +47,47 @@ def _check_dangerous(command: str) -> Optional[str]:
     return "; ".join(reasons) if reasons else None
 
 
-@tool
-async def bash(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None) -> str:
-    """
-    Execute a shell command and return its output (stdout + stderr combined).
-    Output is truncated at 500 lines or 50 KB to avoid context overflow.
-    Use this to run terminal commands, scripts, or system operations.
+def _truncate_output(text: str) -> str:
+    total_chars = len(text)
+    if total_chars > MAX_CHARS:
+        text = text[:MAX_CHARS]
+        text += f"\n[Output truncated: {total_chars - MAX_CHARS} chars removed]"
+    return text
 
-    SAFETY:
-    - Set `need_confirmation` to `True` for ANY command that could be destructive
-      (deleting files, modifying system settings, affecting disk/network, etc.).
-      The user will see a confirmation dialog before execution.
-    - Dangerous commands (rm -rf, dd, chmod 777, shutdown, curl|bash, etc.)
-      are automatically detected and will ALWAYS require confirmation, even
-      if `need_confirmation` is `False`.
 
-    PARAMS:
-    command: str - The shell command to execute.
-    explanation: str - Plain-language explanation of what this command does (shown to the user).
-    timeout: int - Maximum execution time in seconds (default: 30, max: 120).
-    need_confirmation: bool - Set to True if the command could be destructive (default: False).
-    workdir: Optional[str] - Working directory for the command (default: None = ~/.simplexai).
-    """
+def get_description() -> dict:
+    return {
+        "description": "Execute a shell command and return its output (stdout + stderr combined). Output is truncated at 500 lines or 50 KB. Use this to run terminal commands, scripts, or system operations. Set need_confirmation=True for destructive commands.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to execute.",
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "Plain-language explanation of what this command does.",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Maximum execution time in seconds (default: 30, max: 120).",
+                },
+                "need_confirmation": {
+                    "type": "boolean",
+                    "description": "Set to True if the command could be destructive.",
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": "Working directory for the command.",
+                },
+            },
+            "required": ["command", "explanation"],
+        },
+    }
+
+
+async def execute(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None) -> str:
     if timeout < 1:
         timeout = 1
     if timeout > 120:
@@ -89,7 +98,6 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
     if need_confirmation or danger_reason:
         if registry.on_confirmation_required is None:
             return "Confirmation required but no UI handler is registered."
-
         approved = await registry.on_confirmation_required(
             command, explanation, danger_reason or ""
         )
@@ -98,11 +106,6 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
 
     log.debug("Executing bash command (timeout=%ds): %s", timeout, command[:200])
 
-    # Inject sentinel marker to detect silent commands.
-    # Wrap in a subshell so `exit N` inside the command doesn't
-    # prevent the sentinel from being emitted.
-    # Use printf to guarantee sentinel is always on its own line,
-    # even when the command produces no trailing newline.
     full_command = f"( {command} ); printf '\\n{SENTINEL}:%s\\n' \"$?\""
 
     try:
@@ -155,17 +158,3 @@ async def bash(command: str, explanation: str, timeout: int = 30, need_confirmat
     except Exception as e:
         log.exception("Unexpected error in bash tool")
         return f"Error executing command: {str(e)}"
-
-
-def _truncate_output(text: str) -> str:
-    """
-    Truncate output to MAX_CHARS characters.
-    Appends a truncation notice if the limit was exceeded.
-    """
-    total_chars = len(text)
-
-    if total_chars > MAX_CHARS:
-        text = text[:MAX_CHARS]
-        text += f"\n[Output truncated: {total_chars - MAX_CHARS} chars removed]"
-
-    return text

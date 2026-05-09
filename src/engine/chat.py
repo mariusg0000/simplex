@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import AsyncIterable, List, Dict, Any, Optional
 import litellm
 from src.config import settings, logger
-from src.engine.tools import registry
+from src.engine.tools import registry as tool_registry
+from src.engine.agents import agent_registry
 
 log = logging.getLogger("simplex.engine.chat")
 
@@ -130,7 +131,7 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
     cumulative_cost = 0.0
     while True:
         round_num += 1
-        tools = registry.get_schemas()
+        tools = tool_registry.get_schemas() + agent_registry.get_schemas()
         api_messages = sanitize_messages(messages)
         tool_count = len([m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")])
         
@@ -285,14 +286,17 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
             args = json.loads(tc["function"]["arguments"])
             
             cmd_snippet = ""
-            if name == "bash" and "command" in args:
+            if "command" in args:
                 cmd = args["command"]
                 cmd_snippet = cmd[:50] + ("..." if len(cmd) > 50 else "")
             yield {"type": "tool", "content": f"Executing {name}" + (f": {cmd_snippet}" if cmd_snippet else " ...")}
             yield {"type": "status", "value": "tool_run", "content": f"Running: {name}" + (f" {cmd_snippet}" if cmd_snippet else "") + "..."}
             
             t0 = time.time()
-            result = await registry.call(name, args)
+            if name in tool_registry:
+                result = await tool_registry.call(name, args)
+            else:
+                result = await agent_registry.call(name, args)
             elapsed = time.time() - t0
             result_summary = str(result)[:60]
             _debug(f"TOOL RESULT [{name}]: result_len={len(str(result))}, preview={result_summary}, elapsed={elapsed:.2f}s")

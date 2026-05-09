@@ -2,12 +2,12 @@
 tests/test_builtin_tools.py · Unit tests for built-in tools · get_current_time.
 """
 
-from src.engine.builtin_tools import get_current_time
+from src.tools.get_current_time import execute
 
 
 def test_get_current_time():
     """Returns a string in datetime format."""
-    result = get_current_time()
+    result = execute()
     assert isinstance(result, str)
     parts = result.split(" ")
     assert len(parts) == 2

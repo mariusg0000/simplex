@@ -17,6 +17,7 @@ from src.engine.agents import AgentStep
 
 from src.config import settings
 from src.prompts import load_cli_prompts
+from src.engine.agents import agent_registry
 
 _system_env_cache: Optional[str] = None
 
@@ -154,6 +155,9 @@ def get_system_prompt() -> dict:
     content = settings.system_prompt
     if env_section:
         content += f"\n\nSYSTEM ENVIRONMENT:\n{env_section}"
+    agent_descs = agent_registry.get_descriptions()
+    if agent_descs:
+        content += f"\n\nAVAILABLE AGENTS:\n{agent_descs}"
     content += (
         f"\n\nCWD: {os.getcwd()}\n"
         f"Current time: {datetime.now().strftime('%Y-%m-%d %H:00 (%B, %A)')}\n\n"
@@ -166,7 +170,12 @@ def get_system_prompt() -> dict:
         "1. BE EFFICIENT: Do not perform more than 2 search attempts for the same request.\n"
         "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
         "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
-        "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates."
+        "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates.\n"
+        "\n"
+        "PDF CREATION:\n"
+        "- For PDF documents: call create_pdf(description=...) with a DETAILED text description of the content, layout, and formatting.\n"
+        "- Include absolute paths to any files the user mentioned (PDF, DOCX, images, etc.) in the description.\n"
+        "- Do NOT write HTML yourself. Do NOT call generate_pdf directly. Delegate all PDF work to create_pdf."
     )
     return {"role": "system", "content": content}
 
