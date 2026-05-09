@@ -6,10 +6,13 @@ import asyncio
 import importlib.util
 import inspect
 import logging
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, get_type_hints, get_origin
 
 log = logging.getLogger("simplex.engine.tools")
+
+agent_params_ctx: ContextVar[Optional[dict]] = ContextVar("agent_params", default=None)
 
 BUILTIN_TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 CUSTOM_TOOLS_DIR = Path.home() / ".simplexai" / "tools"
@@ -45,6 +48,7 @@ class ToolRegistry:
             return
         self._initialized = True
         self._tools: Dict[str, Callable] = {}
+        self._tool_executors: Dict[str, Callable] = {}
         self.schemas: List[Dict[str, Any]] = []
         self._disabled: Set[str] = set()
         self._discovered = False
@@ -87,6 +91,7 @@ class ToolRegistry:
                     self.schemas[:] = [s for s in self.schemas if s["function"]["name"] != name]
 
                 self._tools[name] = async_wrapper
+                self._tool_executors[name] = module.execute
                 self.schemas.append({"type": "function", "function": desc})
                 log.info(f"Loaded tool '{name}' from {source_label}")
             except Exception as e:
@@ -180,12 +185,24 @@ class ToolRegistry:
         if name not in self._tools:
             return f"Error: Tool '{name}' not found."
 
+        agent_params = agent_params_ctx.get()
+        if agent_params is not None and name in self._tool_executors:
+            sig = inspect.signature(self._tool_executors[name])
+            if '_agent_params' in sig.parameters:
+                log.info("→ injecting _agent_params into tool '%s'", name)
+                arguments = {**arguments, '_agent_params': agent_params}
+
         func = self._tools[name]
+        log.info("→ tool call: %s(%s)", name, arguments)
         try:
             if inspect.iscoroutinefunction(func):
-                return await func(**arguments)
-            return func(**arguments)
+                result = await func(**arguments)
+            else:
+                result = func(**arguments)
+            log.info("← tool result: %s[:200] = %s", name, str(result)[:200])
+            return result
         except Exception as e:
+            log.error("! tool error: %s - %s", name, e)
             return f"Error executing tool '{name}': {str(e)}"
 
 

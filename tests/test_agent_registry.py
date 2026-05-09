@@ -12,12 +12,14 @@ enabled
 You can delegate PDF creation tasks to the `create_pdf` agent.
 
 ## allowed_tools
-bash
 generate_pdf
-task_done
+read_file
 
 ## role_prompt
 You are a PDF generation specialist.
+
+## execute_script
+print("ok")
 """
 
 
@@ -25,8 +27,10 @@ def test_parse_agent_md():
     sections = _parse_agent_md(SAMPLE_MD)
     assert sections["enabled"] == "enabled"
     assert "delegate PDF creation" in sections["agent_description"]
-    assert sections["allowed_tools"] == "bash\ngenerate_pdf\ntask_done"
+    assert sections["allowed_tools"] == "generate_pdf\nread_file"
     assert "PDF generation specialist" in sections["role_prompt"]
+    assert "done_tool" not in sections
+    assert sections["execute_script"] == 'print("ok")'
 
 
 def test_parse_agent_md_missing_section():
@@ -53,12 +57,14 @@ disabled
 You can delegate PDF creation tasks to the `create_pdf` agent.
 
 ## allowed_tools
-bash
 generate_pdf
-task_done
+read_file
 
 ## role_prompt
 You are a PDF generation specialist.
+
+## execute_script
+print("ok")
 """
     sections = _parse_agent_md(md)
     assert sections["enabled"] == "disabled"

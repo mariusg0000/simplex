@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional, Callable
 
 from nicegui import ui
-from src.engine.agents import AgentStep
+from src.engine.agents import AgentStep, AgentStreamChunk
 
 from src.config import settings
 from src.prompts import load_cli_prompts
@@ -26,46 +26,59 @@ EXCLUDED_CLI: set[str] = {
 }
 active_task: Optional[asyncio.Task] = None
 
-# Sub-agent activity log
-sub_agent_log: list[AgentStep] = []
+# Sub-agent raw output panel
 sub_agent_panel: Optional[ui.expansion] = None
 sub_agent_content: Optional[ui.column] = None
 
 
-def clear_sub_agent_log():
-    """Adaugă separator între run-uri — nu șterge nimic."""
-    if sub_agent_content:
-        with sub_agent_content:
-            ui.separator().classes("my-0.5 opacity-30")
+def make_sub_agent_callback():
+    """Creates (on_step, on_stream).
 
+    on_step: tool calls + results (first 100 chars each), raw terminal style.
+    on_stream: raw LLM text appended verbatim — no metadata, like a terminal.
+    """
+    stream_label = None
 
-def make_sub_agent_callback() -> Callable[[AgentStep], None]:
-    """Creates a callback that appends to sub_agent_log and updates the UI."""
+    def _on_stream(chunk: AgentStreamChunk):
+        nonlocal stream_label
+        if sub_agent_panel and not sub_agent_panel.value:
+            sub_agent_panel.value = True
+        if stream_label is None and sub_agent_content:
+            with sub_agent_content:
+                stream_label = ui.label("").classes(
+                    "text-[11px] font-mono text-gray-600 leading-5 py-0.5 whitespace-pre-wrap"
+                )
+        if stream_label:
+            stream_label.set_text((stream_label.text or "") + chunk.content)
+            _scroll_sub_agent()
+
     def _on_step(step: AgentStep):
-        sub_agent_log.append(step)
+        nonlocal stream_label
         if sub_agent_panel and not sub_agent_panel.value:
             sub_agent_panel.value = True
         if sub_agent_content:
             with sub_agent_content:
-                icon = {
-                    "llm_call": "🤔",
-                    "tool_call": "⚡",
-                    "tool_result": "✅",
-                    "error": "❌",
-                    "done": "🏁",
-                }.get(step.step_type, "•")
-                max_chars = 200 if step.step_type == "tool_call" else 150
-                content = step.content[:max_chars]
-                line = f"[{step.timestamp}] {icon} [{step.agent_name}] R{step.round}: {content}"
-                ui.label(line).classes("text-[11px] font-mono text-gray-600 leading-5 py-0.5")
-                try:
-                    sub_agent_content.client.run_javascript("""
-                        const el = document.querySelector('.sub-agent-expansion .q-expansion-item__content');
-                        if (el) el.scrollTop = el.scrollHeight;
-                    """)
-                except Exception:
-                    pass
-    return _on_step
+                if step.step_type == "tool_call":
+                    stream_label = None
+                    ui.label(f"$ {step.content[:100]}").classes(
+                        "text-[11px] font-mono text-gray-600 leading-5 py-0.5 whitespace-pre-wrap"
+                    )
+                elif step.step_type == "tool_result":
+                    ui.label(step.content[:100]).classes(
+                        "text-[11px] font-mono text-gray-600 leading-5 py-0.5 whitespace-pre-wrap"
+                    )
+                _scroll_sub_agent()
+    return _on_step, _on_stream
+
+
+def _scroll_sub_agent():
+    try:
+        sub_agent_content.client.run_javascript("""
+            const el = document.querySelector('.sub-agent-expansion .q-expansion-item__content');
+            if (el) el.scrollTop = el.scrollHeight;
+        """)
+    except Exception:
+        pass
 chat_title: str = "New Chat"
 current_session_id: str = ""
 status_label: Any = None

@@ -7,6 +7,9 @@ SAFE_ZONE = 20
 
 
 def _weasyprint_convert(html_path: str, pdf_path: str) -> tuple[bool, str]:
+    if not Path(html_path).exists():
+        return False, f"HTML file not found: {html_path}. Call write_html(content='...') first to create it."
+
     try:
         result = subprocess.run(
             ['weasyprint', html_path, pdf_path],
@@ -107,21 +110,26 @@ def _check_overflow_via_fitz(pdf_path: str, margin: int = SAFE_ZONE) -> tuple[bo
 
 def get_description() -> dict:
     return {
-        "description": "Convert HTML file to PDF with deterministic validation. Stages: WeasyPrint conversion -> overlap check -> overflow check.",
+        "description": "Convert HTML file to PDF with deterministic validation. Stages: WeasyPrint conversion -> overlap check -> overflow check. On success the agent terminates automatically — do NOT call any done/finish tool.",
         "parameters": {
             "type": "object",
             "properties": {
                 "html_path": {
                     "type": "string",
-                    "description": "Absolute path to the HTML file to convert.",
+                    "description": "Absolute path to the HTML file to convert (auto-managed in agent context).",
                 },
             },
-            "required": ["html_path"],
+            "required": [],
         },
     }
 
 
-async def execute(html_path: str) -> str:
+async def execute(html_path: str = None, _agent_params: dict = None) -> str:
+    if _agent_params and not html_path:
+        html_path = _agent_params.get("html_path")
+    if not html_path:
+        return "PDF_ERROR: no html_path available"
+
     pdf_path = str(Path(html_path).with_suffix('.pdf'))
 
     ok, msg = _weasyprint_convert(html_path, pdf_path)
@@ -136,4 +144,8 @@ async def execute(html_path: str) -> str:
     if not ok:
         return f"PDF_ERROR: overflow\n{msg}"
 
-    return f"PDF_OK:\n{pdf_path}"
+    # On success, return "_AGENT_DONE_: <path>" which signals the agent loop
+    # to terminate immediately without an extra LLM round. This eliminates
+    # the need for a separate done_tool / pdf_done tool call after success.
+    # On error, return "PDF_ERROR: <reason>" so the LLM can retry.
+    return f"_AGENT_DONE_: {pdf_path}"

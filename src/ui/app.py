@@ -148,6 +148,22 @@ def init_ui():
             .nicegui-markdown h4 {{ font-size: 0.9375rem !important; line-height: 1.3rem !important; margin: 0.4375rem 0 0.1875rem 0 !important; font-weight: 600 !important; }}
             .nicegui-markdown h5 {{ font-size: 0.875rem !important; line-height: 1.25rem !important; margin: 0.375rem 0 0.125rem 0 !important; font-weight: 600 !important; }}
             .nicegui-markdown h6 {{ font-size: 0.8125rem !important; line-height: 1.2rem !important; margin: 0.3125rem 0 0.125rem 0 !important; font-weight: 600 !important; }}
+
+            /* Sub-agent expansion: compact header */
+            .sub-agent-expansion .q-item {{
+                min-height: 22px !important;
+                padding-top: 0 !important;
+                padding-bottom: 0 !important;
+                padding-left: 8px !important;
+                padding-right: 8px !important;
+            }}
+            .sub-agent-expansion .q-item__section {{
+                font-size: 0.6875rem !important;
+            }}
+            .sub-agent-expansion .q-expansion-item__content {{
+                max-height: 200px;
+                overflow-y: auto;
+            }}
         </style>
         <script>
             document.addEventListener('DOMContentLoaded', function() {{
@@ -190,12 +206,10 @@ def init_ui():
 
         state.sub_agent_panel = ui.expansion(
             text="Sub-Agent Activity", icon="terminal",
-            value=False,
-        ).classes("w-full bg-slate-50 border-t text-xs flex-shrink-0").style(
-            "max-height: 200px; overflow-y: auto;"
-        )
+            value=True,
+        ).classes("sub-agent-expansion w-full border-t text-xs flex-shrink-0")
         with state.sub_agent_panel:
-            state.sub_agent_content = ui.column().classes("w-full px-4 py-1 gap-0")
+            state.sub_agent_content = ui.column().classes("w-full px-4 py-1 gap-0 bg-green-50")
 
         with ui.row().classes("w-full px-3 text-xs text-slate-400 bg-slate-100 border-t items-center").style("height: 24px; flex-shrink: 0;"):
             state.status_label = ui.label("Ready").classes("flex-grow")
