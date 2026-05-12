@@ -90,7 +90,7 @@ A minimal tool for greeting someone would have:
 
 2. **agent_description** — content is a one-liner describing what the agent does. This is shown to the main LLM so it knows when to delegate to this agent.
 
-3. **allowed_tools** — content lists one tool name per line. The agent can ONLY call these tools. Common tools: `bash`, `read_file`, `read_document`, `write_html`, `generate_pdf`, `task_done`. Check what tools exist before listing them.
+3. **allowed_tools** — content lists one tool name per line. The agent can ONLY call these tools. Common tools: `bash`, `read_file`, `read_document`, `task_done`. Check what tools exist before listing them.
 
 4. **role_prompt** — content is the full system prompt for the sub-agent. This defines the agent's personality, responsibilities, and exact workflow step by step. Be very detailed. Include what to do on errors, when to retry, and how to signal completion.
 

@@ -87,7 +87,46 @@ def get_description() -> dict:
     }
 
 
-async def execute(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None) -> str:
+async def execute(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None, _agent_params: dict = None) -> str:
+    # Enforce agent workspace isolation
+    if _agent_params:
+        allowed_dir = Path(_agent_params["work_dir"]).resolve()
+        if workdir:
+            requested = Path(workdir).resolve()
+            try:
+                requested.relative_to(allowed_dir)
+            except ValueError:
+                return (
+                    f"Error: workdir '{workdir}' is outside the allowed session folder "
+                    f"'{allowed_dir}'. All files must stay inside your session folder."
+                )
+            workdir = str(requested)
+        else:
+            workdir = str(allowed_dir)
+
+        # Best-effort: detect redirects to absolute paths outside allowed_dir
+        def _inspect_redirect_target(target: str) -> str | None:
+            t = target.strip().strip("\"'")
+            if t.startswith("~/"):
+                t = str(Path.home() / t[2:])
+            if t.startswith("/"):
+                p = Path(t).resolve()
+                try:
+                    p.relative_to(allowed_dir)
+                except ValueError:
+                    return str(p)
+            return None
+
+        parts = command.split()
+        for i, token in enumerate(parts):
+            if token in (">", ">>") and i + 1 < len(parts):
+                off_limit = _inspect_redirect_target(parts[i + 1])
+                if off_limit:
+                    return (
+                        f"Error: command writes to '{off_limit}' which is outside the "
+                        f"allowed session folder '{allowed_dir}'. All files must stay "
+                        f"inside your session folder."
+                    )
     if timeout < 1:
         timeout = 1
     if timeout > 120:

@@ -9,14 +9,14 @@ SAMPLE_MD = """\
 enabled
 
 ## agent_description
-You can delegate PDF creation tasks to the `create_pdf` agent.
+You can delegate document processing tasks to the `process_doc` agent.
 
 ## allowed_tools
-generate_pdf
+bash
 read_file
 
 ## role_prompt
-You are a PDF generation specialist.
+You are a document processing specialist.
 
 ## execute_script
 print("ok")
@@ -26,9 +26,9 @@ print("ok")
 def test_parse_agent_md():
     sections = _parse_agent_md(SAMPLE_MD)
     assert sections["enabled"] == "enabled"
-    assert "delegate PDF creation" in sections["agent_description"]
-    assert sections["allowed_tools"] == "generate_pdf\nread_file"
-    assert "PDF generation specialist" in sections["role_prompt"]
+    assert "delegate document processing" in sections["agent_description"]
+    assert sections["allowed_tools"] == "bash\nread_file"
+    assert "document processing specialist" in sections["role_prompt"]
     assert "done_tool" not in sections
     assert sections["execute_script"] == 'print("ok")'
 
@@ -54,14 +54,14 @@ def test_parse_agent_md_disabled():
 disabled
 
 ## agent_description
-You can delegate PDF creation tasks to the `create_pdf` agent.
+You can delegate document processing tasks.
 
 ## allowed_tools
-generate_pdf
+bash
 read_file
 
 ## role_prompt
-You are a PDF generation specialist.
+You are a document processing specialist.
 
 ## execute_script
 print("ok")
@@ -93,35 +93,35 @@ def test_parse_agent_md_section_order_independent():
     assert sections["agent_description"] == "desc"
 
 
-def test_agent_registry_discovers_create_pdf():
-    """The built-in create_pdf.md should be discovered."""
+def test_agent_registry_discovers_agents():
+    """Built-in agents should be discovered."""
     reg = AgentRegistry()
-    assert "create_pdf" in reg
+    assert "create_doc" in reg
 
 
 def test_agent_registry_get_descriptions():
     reg = AgentRegistry()
     desc = reg.get_descriptions()
-    assert "create_pdf" in desc or "[Agent: create_pdf]" in desc
+    assert "create_doc" in desc or "[Agent: create_doc]" in desc
 
 
 def test_agent_registry_get_schemas():
     reg = AgentRegistry()
     schemas = reg.get_schemas()
     names = [s["function"]["name"] for s in schemas]
-    assert "create_pdf" in names
+    assert "create_doc" in names
 
 
 def test_agent_registry_disable():
     reg = AgentRegistry()
-    reg.disable("create_pdf")
+    reg.disable("create_doc")
     schemas = reg.get_schemas()
     names = [s["function"]["name"] for s in schemas]
-    assert "create_pdf" not in names
-    reg.enable("create_pdf")
+    assert "create_doc" not in names
+    reg.enable("create_doc")
     schemas = reg.get_schemas()
     names = [s["function"]["name"] for s in schemas]
-    assert "create_pdf" in names
+    assert "create_doc" in names
 
 
 def test_agent_registry_unknown_call():

@@ -127,6 +127,21 @@ class AgentRegistry:
         schemas = []
         for name, agent in self._agents.items():
             if agent.enabled and name not in self._disabled:
+                properties = {
+                    "task": {
+                        "type": "string",
+                        "description": f"Task for the {name} agent. Describe what you need in detail."
+                    },
+                }
+                if agent.execute_script:
+                    properties["work_dir"] = {
+                        "type": "string",
+                        "description": (
+                            "Existing session folder to reuse. When provided, the agent "
+                            "continues working in this folder instead of creating a new one. "
+                            "Use this for revisions or corrections to existing work."
+                        ),
+                    }
                 schemas.append({
                     "type": "function",
                     "function": {
@@ -134,12 +149,7 @@ class AgentRegistry:
                         "description": agent.description,
                         "parameters": {
                             "type": "object",
-                            "properties": {
-                                "task": {
-                                    "type": "string",
-                                    "description": f"Task for the {name} agent. Describe what you need in detail."
-                                }
-                            },
+                            "properties": properties,
                             "required": ["task"],
                         },
                     },
@@ -157,26 +167,53 @@ class AgentRegistry:
 
         dynamic_context = ""
         token = None
+        params_dict = None
+
         if agent.execute_script:
-            log.info("▶ running execute_script for '%s'", name)
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "python3", "-c", agent.execute_script,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+            reuse_work_dir = arguments.get("work_dir")
+
+            if reuse_work_dir:
+                reuse_path = Path(reuse_work_dir).resolve()
+                if not reuse_path.is_dir():
+                    return (
+                        f"Error: Specified work_dir '{reuse_work_dir}' does not exist "
+                        f"or is not a directory."
+                    )
+                params_dict = {"work_dir": str(reuse_path)}
+                token = agent_params_ctx.set(params_dict)
+                dynamic_context = (
+                    f"SANDBOX: {reuse_path}\n"
+                    f"All work happens HERE and ONLY HERE. Scripts, temp files, final document — "
+                    f"everything must be created inside this directory. No exceptions. "
+                    f"The bash tool enforces this."
                 )
-                stdout, stderr = await proc.communicate()
-                if proc.returncode == 0 and stdout:
-                    output = stdout.decode().strip()
-                    log.info("✓ execute_script output: %s", output)
-                    params_dict = json.loads(output)
-                    token = agent_params_ctx.set(params_dict)
-                    dynamic_context = "Agent session initialized."
-                else:
-                    err_msg = stderr.decode().strip() or f"exit code {proc.returncode}"
-                    log.error("✗ execute_script for '%s' failed: %s", name, err_msg)
-            except Exception as e:
-                log.error("✗ execute_script for '%s' error: %s", name, e)
+                log.info("✓ reusing existing work_dir: %s", reuse_path)
+            else:
+                log.info("▶ running execute_script for '%s'", name)
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "python3", "-c", agent.execute_script,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode == 0 and stdout:
+                        output = stdout.decode().strip()
+                        log.info("✓ execute_script output: %s", output)
+                        params_dict = json.loads(output)
+                        token = agent_params_ctx.set(params_dict)
+                        wd = params_dict.get("work_dir", "")
+                        dynamic_context = (
+                            f"SANDBOX: {wd}\n"
+                            f"All work happens HERE and ONLY HERE. Scripts, temp files, final document — "
+                            f"everything must be created inside this directory. No exceptions. "
+                            f"The bash tool enforces this."
+                        )
+                    else:
+                        err_msg = stderr.decode().strip() or f"exit code {proc.returncode}"
+                        log.error("✗ execute_script for '%s' failed: %s", name, err_msg)
+                except Exception as e:
+                    log.error("✗ execute_script for '%s' error: %s", name, e)
 
         tc_agent = ToolCapableAgent(
             name=name,
@@ -198,6 +235,14 @@ class AgentRegistry:
                                         dynamic_context=dynamic_context)
             log.info("=== Agent '%s' done ===", name)
             log.info("result: %s", result[:500])
+
+            # Enrich result with session folder info so caller can reuse it
+            if params_dict and "work_dir" in params_dict:
+                wd = params_dict["work_dir"]
+                session_tag = f"[Session folder: {wd}]"
+                if session_tag not in result:
+                    result = f"{result}\n{session_tag}"
+
             return result
         finally:
             if token is not None:
@@ -527,10 +572,7 @@ class ToolCapableAgent:
 
                 # _AGENT_DONE_ prefix signals that the tool has completed the
                 # agent's task successfully. Any tool can use this to auto-
-                # terminate, eliminating an unnecessary LLM round. Example:
-                # generate_pdf returns "_AGENT_DONE_: /path/to/file.pdf"
-                # on success — the agent exits immediately without LLM
-                # needing to call a separate done tool.
+                # terminate, eliminating an unnecessary LLM round.
                 if result_str.startswith("_AGENT_DONE_:"):
                     done_result = result_str.split(":", 1)[1].strip()
                     log.info("│ %s ← _AGENT_DONE_ from tool '%s': %s",

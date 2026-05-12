@@ -4,7 +4,6 @@ src/ui/settings.py · Settings dialog · Working directories and UI preferences.
 
 from nicegui import ui
 from src.ui import state
-from src.ui.chat_view import refresh_chat_display
 from src.storage import storage
 from src.ui.state import build_install_command, find_tool, load_cli_prompts
 
@@ -13,11 +12,6 @@ def create_settings_dialog(on_style_change=None):
     """Creates and returns a settings dialog element."""
     with ui.dialog() as dialog, ui.card().classes('w-96 p-4'):
         ui.label('Settings').classes('text-xl font-bold mb-2')
-
-        async def toggle_reasoning(e):
-            storage.update_preference("show_reasoning", e.value)
-            await refresh_chat_display()
-        state.show_reasoning_checkbox = ui.checkbox("Show Reasoning", value=storage.prefs.show_reasoning, on_change=toggle_reasoning)
 
         def change_font_size(e):
             storage.update_preference("font_size", int(e.value))

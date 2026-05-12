@@ -9,7 +9,6 @@ from nicegui import ui
 from src.ui import state
 from src.ui.sidebar import refresh_sidebar
 from src.db import db
-from src.storage import storage
 from src.engine.chat import stream_chat
 from src.engine.tools import registry
 from src.engine.agents import activity_callback, agent_stream_callback
@@ -206,10 +205,6 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
         total_reasoning = ""
 
         response_container = None
-        reasoning_container = None
-        tool_indicator = None
-
-        all_reasoning_els = []
 
         async for chunk in stream_chat(state.messages):
             if chunk["type"] == "status":
@@ -226,37 +221,16 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
-
                 total_reasoning += chunk["content"]
-
-                if storage.prefs.show_reasoning:
-                    if reasoning_container is None:
-                        with state.chat_content:
-                            reasoning_sep = ui.separator().classes("my-1 opacity-20")
-                            all_reasoning_els.append(reasoning_sep)
-                            reasoning_container = ui.markdown("").classes("terminal-reasoning")
-                            all_reasoning_els.append(reasoning_container)
-
-                    reasoning_container.set_content((reasoning_container.content or "") + chunk["content"])
-                    state.scroll_area.scroll_to(percent=1.0, duration=0.1)
-                else:
-                    state.status_label.set_text(f"Reasoning: {len(total_reasoning)} chars")
+                state.log_activity(chunk["content"])
 
             elif chunk["type"] == "tool":
                 response_container = None
-                reasoning_container = None
-
                 if thinking_indicator:
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
-                if tool_indicator:
-                    try: tool_indicator.delete()
-                    except: pass
-
-                with state.chat_content:
-                    tool_indicator = ui.label(f"▸ tool: {chunk['content']}").classes("terminal-tool")
-                state.scroll_area.scroll_to(percent=1.0, duration=0.1)
+                state.log_activity(f"▸ tool: {chunk['content']}")
 
             elif chunk["type"] == "content":
                 if thinking_indicator:
@@ -277,18 +251,7 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
             try: thinking_indicator.delete()
             except: pass
 
-        if not storage.prefs.show_reasoning:
-            for el in all_reasoning_els:
-                try: el.delete()
-                except: pass
-            all_reasoning_els.clear()
-
-        # When show_reasoning is OFF, reasoning elements were deleted above.
-        # Never promote reasoning to content — the model's response is authoritative.
-
-        # Preserve model's raw output: NEVER promote reasoning -> content.
-        # The two fields are semantically distinct. Content = final response,
-        # reasoning_content = internal monologue. Display logic handles fallbacks.
+        state.close_activity_log()
         state.status_label.set_text("Saving to DB...")
         state.messages.append({
             "role": "assistant",

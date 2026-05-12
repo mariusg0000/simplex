@@ -11,10 +11,8 @@ def test_registry_has_builtin_tools():
     assert "bash" in registry
     assert "open_file" in registry
     assert "read_document" in registry
-    assert "generate_pdf" in registry
     assert "get_current_time" in registry
     assert "task_done" in registry
-    assert "write_html" in registry
     assert "read_file" in registry
 
 

@@ -163,6 +163,7 @@ def init_ui():
             .sub-agent-expansion .q-expansion-item__content {{
                 max-height: 200px;
                 overflow-y: auto;
+                user-select: text !important;
             }}
         </style>
         <script>
@@ -205,9 +206,14 @@ def init_ui():
             state.chat_content = ui.column().classes("w-full p-4 gap-1")
 
         state.sub_agent_panel = ui.expansion(
-            text="Sub-Agent Activity", icon="terminal",
-            value=True,
+            text="Activity Log", icon="terminal",
+            value=False,
         ).classes("sub-agent-expansion w-full border-t text-xs flex-shrink-0")
+        state.sub_agent_panel.on_value_change(
+            lambda e: setattr(state, 'sub_agent_dismissed',
+                              not e.value if not e.value and not state._sub_agent_closing
+                              else state.sub_agent_dismissed)
+        )
         with state.sub_agent_panel:
             state.sub_agent_content = ui.column().classes("w-full px-4 py-1 gap-0 bg-green-50")
 

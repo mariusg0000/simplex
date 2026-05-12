@@ -45,7 +45,7 @@ if not SCRIPTS_VENV.exists():
 
 _SCRIPTS_PIP = SCRIPTS_VENV / "bin" / "pip"
 if _SCRIPTS_PIP.exists():
-    for _pkg in ["weasyprint", "pandas", "openpyxl", "pymupdf"]:
+    for _pkg in ["weasyprint", "pandas", "openpyxl", "pymupdf", "python-docx"]:
         r = subprocess.run([str(_SCRIPTS_PIP), "show", _pkg], capture_output=True)
         if r.returncode != 0:
             subprocess.run([str(_SCRIPTS_PIP), "install", _pkg], capture_output=True)

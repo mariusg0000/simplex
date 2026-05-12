@@ -9,7 +9,7 @@ Agents are declarative Markdown files. Each `.md` file must have these sections:
 One-liner describing what the agent does. Shown to the main LLM.
 
 ## `## allowed_tools`
-One tool name per line from the available tool pool (e.g. `bash`, `read_document`, `generate_pdf`, `task_done`, `write_html`, `read_file`).
+One tool name per line from the available tool pool (e.g. `bash`, `read_document`, `task_done`, `read_file`).
 
 ## `## role_prompt`
 The system prompt for the sub-agent. Be detailed — this is the agent's personality and workflow.
@@ -63,6 +63,6 @@ Exemplu — un tool care returnează:
 
 → Agentul se termină automat cu rezultatul "/path/to/fisier.pdf".
 
-Atenție: Dacă un tool declară în descrierea sa că auto-termină agentul
-(ex: `generate_pdf`), agentul NU trebuie să mai sune `task_done()` sau
+Atenție: Dacă un tool declară în descrierea sa că auto-termină agentul,
+agentul NU trebuie să mai sune `task_done()` sau
 un alt tool de finalizare după acesta.

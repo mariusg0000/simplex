@@ -3,6 +3,7 @@ src/ui/state.py · Shared application state · Holds globals accessed by UI comp
 """
 
 import os
+import re
 import shutil
 import uuid
 import asyncio
@@ -29,44 +30,89 @@ active_task: Optional[asyncio.Task] = None
 # Sub-agent raw output panel
 sub_agent_panel: Optional[ui.expansion] = None
 sub_agent_content: Optional[ui.column] = None
+sub_agent_dismissed: bool = False
+_sub_agent_closing: bool = False
+_console = None  # single console label
+
+
+def _collapse_newlines(text: str) -> str:
+    return re.sub(r'\n+', '\n', text)
+
+
+def log_activity(text: str):
+    """Append text to the Activity Log console panel."""
+    global _console
+    if sub_agent_panel and not sub_agent_panel.value and not sub_agent_dismissed:
+        sub_agent_panel.value = True
+    if sub_agent_content:
+        if _console is None:
+            with sub_agent_content:
+                _console = ui.label("").classes(
+                    "text-[11px] font-mono text-black leading-5 py-0.5 whitespace-pre-wrap"
+                )
+        _console.set_text((_console.text or "") + _collapse_newlines(text))
+        _scroll_sub_agent()
+
+
+def close_activity_log():
+    """Close the Activity Log panel and reset dismiss flag."""
+    global _console
+    if sub_agent_panel:
+        global _sub_agent_closing
+        _sub_agent_closing = True
+        sub_agent_panel.value = False
+        _sub_agent_closing = False
+    global sub_agent_dismissed
+    sub_agent_dismissed = False
+    _console = None
 
 
 def make_sub_agent_callback():
-    """Creates (on_step, on_stream).
+    """Creates (on_step, on_stream) callbacks that append to the console label.
 
-    on_step: tool calls + results (first 100 chars each), raw terminal style.
-    on_stream: raw LLM text appended verbatim — no metadata, like a terminal.
+    on_step: tool calls + results, raw terminal style.
+    on_stream: raw LLM text appended verbatim — like a terminal.
+    Both feed into the same single console label to preserve chronology.
     """
-    stream_label = None
 
     def _on_stream(chunk: AgentStreamChunk):
-        nonlocal stream_label
-        if sub_agent_panel and not sub_agent_panel.value:
+        if sub_agent_panel and not sub_agent_panel.value and not sub_agent_dismissed:
             sub_agent_panel.value = True
-        if stream_label is None and sub_agent_content:
-            with sub_agent_content:
-                stream_label = ui.label("").classes(
-                    "text-[11px] font-mono text-gray-600 leading-5 py-0.5 whitespace-pre-wrap"
-                )
-        if stream_label:
-            stream_label.set_text((stream_label.text or "") + chunk.content)
+        if sub_agent_content:
+            global _console
+            if _console is None:
+                with sub_agent_content:
+                    _console = ui.label("").classes(
+                        "text-[11px] font-mono text-black leading-5 py-0.5 whitespace-pre-wrap"
+                    )
+            _console.set_text((_console.text or "") + _collapse_newlines(chunk.content))
             _scroll_sub_agent()
 
     def _on_step(step: AgentStep):
-        nonlocal stream_label
-        if sub_agent_panel and not sub_agent_panel.value:
+        global _console, sub_agent_dismissed, _sub_agent_closing
+        if step.step_type == "done":
+            _console = None
+            if sub_agent_panel:
+                _sub_agent_closing = True
+                sub_agent_panel.value = False
+                _sub_agent_closing = False
+            sub_agent_dismissed = False
+            return
+        if sub_agent_panel and not sub_agent_panel.value and not sub_agent_dismissed:
             sub_agent_panel.value = True
         if sub_agent_content:
-            with sub_agent_content:
-                if step.step_type == "tool_call":
-                    stream_label = None
-                    ui.label(f"$ {step.content[:100]}").classes(
-                        "text-[11px] font-mono text-gray-600 leading-5 py-0.5 whitespace-pre-wrap"
+            if _console is None:
+                with sub_agent_content:
+                    _console = ui.label("").classes(
+                        "text-[11px] font-mono text-black leading-5 py-0.5 whitespace-pre-wrap"
                     )
-                elif step.step_type == "tool_result":
-                    ui.label(step.content[:100]).classes(
-                        "text-[11px] font-mono text-gray-600 leading-5 py-0.5 whitespace-pre-wrap"
-                    )
+            text = ""
+            if step.step_type == "tool_call":
+                text = f"$ {step.content[:500]}"
+            elif step.step_type == "tool_result":
+                text = step.content[:500]
+            if text:
+                _console.set_text((_console.text or "") + "\n" + _collapse_newlines(text))
                 _scroll_sub_agent()
     return _on_step, _on_stream
 
@@ -184,11 +230,6 @@ def get_system_prompt() -> dict:
         "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
         "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
         "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates.\n"
-        "\n"
-        "PDF CREATION:\n"
-        "- For PDF documents: call create_pdf(description=...) with a DETAILED text description of the content, layout, and formatting.\n"
-        "- Include absolute paths to any files the user mentioned (PDF, DOCX, images, etc.) in the description.\n"
-        "- Do NOT write HTML yourself. Do NOT call generate_pdf directly. Delegate all PDF work to create_pdf."
     )
     return {"role": "system", "content": content}
 
