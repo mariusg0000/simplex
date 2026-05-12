@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, validation_alias=AliasChoices("simplex_openai_api_key", "openai_api_key"))
     openai_api_base: Optional[str] = Field(default=None, validation_alias=AliasChoices("simplex_openai_api_base", "openai_api_base"))
     
+    tmp_dir: str = Field(
+        default="~/.simplexai/tmp",
+        validation_alias=AliasChoices("simplex_tmp_dir", "tmp_dir")
+    )
+
     temperature: float = Field(default=0.7, validation_alias=AliasChoices("simplex_temperature", "temperature"))
     max_tokens: int = Field(default=4096, validation_alias=AliasChoices("simplex_max_tokens", "max_tokens"))
 

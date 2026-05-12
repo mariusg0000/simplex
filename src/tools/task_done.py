@@ -1,3 +1,7 @@
+def get_visibility() -> dict:
+    return {"main_agent": False}
+
+
 def get_description() -> dict:
     return {
         "description": "Signal task completion. Call this when your task is finished, passing the result (e.g. file path).",

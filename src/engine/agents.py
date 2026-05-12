@@ -32,6 +32,7 @@ class AgentDef:
     role_prompt: str
     execute_script: str = ""
     done_tool: str = "task_done"
+    model: str = ""
 
 
 def _parse_agent_md(content: str) -> dict:
@@ -94,6 +95,7 @@ class AgentRegistry:
                 execute_script = sections.get("execute_script", "").strip()
                 done_tool_raw = sections.get("done_tool", "").strip()
                 done_tool = done_tool_raw if done_tool_raw else "task_done"
+                model_raw = sections.get("model", "").strip()
 
                 agent_def = AgentDef(
                     name=name,
@@ -103,12 +105,14 @@ class AgentRegistry:
                     role_prompt=role_prompt,
                     execute_script=execute_script,
                     done_tool=done_tool,
+                    model=model_raw,
                 )
 
                 self._agents[name] = agent_def
-                log.info("Loaded agent '%s' from %s (tools=%s, done='%s', has_exec=%s)",
+                log.info("Loaded agent '%s' from %s (tools=%s, done='%s', has_exec=%s, model='%s')",
                          name, source_label, allowed_tools, done_tool,
-                         "yes" if execute_script else "no")
+                         "yes" if execute_script else "no",
+                         model_raw if model_raw else "default")
             except Exception as e:
                 log.error(f"Failed to load agent {filepath.name}: {e}")
 
@@ -181,12 +185,17 @@ class AgentRegistry:
             done_tool_name=agent.done_tool,
         )
 
+        model_override = agent.model or None
+
         on_step = activity_callback.get()
         on_stream = agent_stream_callback.get()
         try:
-            log.info("▶ running agent '%s' (max_rounds=%d, done_tool='%s')",
-                     name, tc_agent.max_rounds, tc_agent.done_tool_name)
-            result = await tc_agent.run(task, on_step=on_step, on_stream=on_stream, dynamic_context=dynamic_context)
+            log.info("▶ running agent '%s' (max_rounds=%d, done_tool='%s', model='%s')",
+                     name, tc_agent.max_rounds, tc_agent.done_tool_name,
+                     model_override or "default")
+            result = await tc_agent.run(task, model_override=model_override,
+                                        on_step=on_step, on_stream=on_stream,
+                                        dynamic_context=dynamic_context)
             log.info("=== Agent '%s' done ===", name)
             log.info("result: %s", result[:500])
             return result

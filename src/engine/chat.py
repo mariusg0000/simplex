@@ -132,7 +132,7 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
     cumulative_cost = 0.0
     while True:
         round_num += 1
-        tools = tool_registry.get_schemas() + agent_registry.get_schemas() + skill_registry.get_schemas()
+        tools = tool_registry.get_main_agent_schemas() + agent_registry.get_schemas() + skill_registry.get_schemas()
         api_messages = sanitize_messages(messages)
         tool_count = len([m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")])
         

@@ -20,6 +20,11 @@ def get_description() -> dict:
 
 
 async def execute(path: str = None, _agent_params: dict = None) -> str:
+    """Read a file's contents (max ~80KB). Defaults to current agent working file.
+
+    _agent_params (injected by engine via ContextVar):
+        html_path (str): Fallback path used when no explicit path is given.
+    """
     if _agent_params and not path:
         path = _agent_params.get("html_path")
     if not path:

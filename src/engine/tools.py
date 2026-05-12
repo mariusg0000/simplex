@@ -50,6 +50,7 @@ class ToolRegistry:
         self._tools: Dict[str, Callable] = {}
         self._tool_executors: Dict[str, Callable] = {}
         self.schemas: List[Dict[str, Any]] = []
+        self._tool_visibility: Dict[str, dict] = {}
         self._disabled: Set[str] = set()
         self._discovered = False
         self.on_confirmation_required: Optional[Callable[[str, str, str], Awaitable[bool]]] = None
@@ -83,6 +84,12 @@ class ToolRegistry:
                     continue
 
                 name = filepath.stem
+                # Optional per-tool visibility declaration
+                if hasattr(module, "get_visibility"):
+                    self._tool_visibility[name] = module.get_visibility()
+                else:
+                    self._tool_visibility[name] = {"main_agent": True}
+
                 async_wrapper = _make_async_wrapper(module.execute)
                 desc = module.get_description()
                 desc["name"] = name
@@ -179,6 +186,17 @@ class ToolRegistry:
     def get_schemas(self) -> List[Dict[str, Any]]:
         self._ensure_discovered()
         return [s for s in self.schemas if s["function"]["name"] not in self._disabled]
+
+    def get_main_agent_schemas(self) -> List[Dict[str, Any]]:
+        """Return tool schemas visible to the main agent.
+        Filters out tools whose get_visibility() sets main_agent=False.
+        """
+        self._ensure_discovered()
+        main_tools = {name for name, vis in self._tool_visibility.items()
+                      if vis.get("main_agent", True)}
+        return [s for s in self.schemas
+                if s["function"]["name"] not in self._disabled
+                and s["function"]["name"] in main_tools]
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:
         self._ensure_discovered()

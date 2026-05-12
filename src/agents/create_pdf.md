@@ -51,11 +51,12 @@ RULES:
 import json, secrets, os
 from pathlib import Path
 
-d = Path(os.path.expanduser("~/.simplexai/tmp/pdf"))
+# SIMPLEXAI_TMP_DIR env var (set by config.py default: ~/.simplexai/tmp)
+base = Path(os.path.expanduser(os.getenv("SIMPLEXAI_TMP_DIR", "~/.simplexai/tmp")))
+d = base / "pdf"
 d.mkdir(parents=True, exist_ok=True)
 hid = secrets.token_hex(8)
 
 print(json.dumps({
     "html_path": str(d / f"{hid}.html"),
-    "pdf_path": str(d / f"{hid}.pdf"),
 }))

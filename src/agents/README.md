@@ -14,6 +14,9 @@ One tool name per line from the available tool pool (e.g. `bash`, `read_document
 ## `## role_prompt`
 The system prompt for the sub-agent. Be detailed — this is the agent's personality and workflow.
 
+## `## model` (optional)
+Which LLM model the agent uses. Format: `provider/model` (e.g. `openai/gpt-4o`, `anthropic/claude-sonnet-4-20250514`, `openai/deepseek-v4-flash`). If omitted or empty, the agent inherits the default model from settings.
+
 ## `## execute_script` (optional)
 A Python script that runs before the agent starts. Must print valid JSON to stdout. The JSON keys become agent parameters accessible to tools via `_agent_params`:
 

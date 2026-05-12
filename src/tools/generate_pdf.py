@@ -6,6 +6,10 @@ import fitz
 SAFE_ZONE = 20
 
 
+def get_visibility() -> dict:
+    return {"main_agent": False}
+
+
 def _weasyprint_convert(html_path: str, pdf_path: str) -> tuple[bool, str]:
     if not Path(html_path).exists():
         return False, f"HTML file not found: {html_path}. Call write_html(content='...') first to create it."
@@ -125,6 +129,15 @@ def get_description() -> dict:
 
 
 async def execute(html_path: str = None, _agent_params: dict = None) -> str:
+    """Convert HTML to PDF with overlap/overflow validation.
+
+    When called from within an agent, html_path is auto-injected via _agent_params.
+    When called standalone, html_path must be passed explicitly.
+
+    _agent_params (injected by engine via ContextVar):
+        html_path (str): Path to the HTML file. pdf_path is derived by
+                         replacing the extension with .pdf.
+    """
     if _agent_params and not html_path:
         html_path = _agent_params.get("html_path")
     if not html_path:

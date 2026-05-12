@@ -71,9 +71,7 @@ from src.engine.tools import registry
 from src.engine.skills import skill_registry
 
 registry.disable("read_document")
-registry.disable("generate_pdf")
 registry.disable("get_current_time")
-registry.disable("task_done")
 
 
 if __name__ in {"__main__", "__mp_main__"}:
