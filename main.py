@@ -12,10 +12,28 @@ TMP_DIR = SIMPLEx_DIR / ".tmp"
 SCRIPTS_DIR = SIMPLEx_DIR / "scripts"
 SCRIPTS_VENV = SCRIPTS_DIR / ".venv"
 SCRIPTS_CATALOG = SCRIPTS_DIR / "scripts.md"
+TOOLS_DIR = SIMPLEx_DIR / "tools"
+AGENTS_DIR = SIMPLEx_DIR / "agents"
 
 SIMPLEx_DIR.mkdir(parents=True, exist_ok=True)
 TMP_DIR.mkdir(exist_ok=True)
 SCRIPTS_DIR.mkdir(exist_ok=True)
+TOOLS_DIR.mkdir(exist_ok=True)
+AGENTS_DIR.mkdir(exist_ok=True)
+
+_BUNDLED_TOOLS_README = Path(__file__).resolve().parent / "src" / "tools" / "README.md"
+_BUNDLED_AGENTS_README = Path(__file__).resolve().parent / "src" / "agents" / "README.md"
+
+_TOOLS_README = TOOLS_DIR / "README.md"
+_AGENTS_README = AGENTS_DIR / "README.md"
+
+# Sync bundled READMEs to custom directories on every startup (overwrite)
+for src, dst in [(_BUNDLED_TOOLS_README, _TOOLS_README),
+                 (_BUNDLED_AGENTS_README, _AGENTS_README)]:
+    if src.exists():
+        dst.write_bytes(src.read_bytes())
+
+
 
 if not SCRIPTS_VENV.exists():
     subprocess.run([sys.executable, "-m", "venv", str(SCRIPTS_VENV)])
