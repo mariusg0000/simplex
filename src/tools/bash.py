@@ -88,44 +88,64 @@ def get_description() -> dict:
 
 
 async def execute(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None, _agent_params: dict = None) -> str:
-    # Enforce agent workspace isolation
-    if _agent_params:
-        allowed_dir = Path(_agent_params["work_dir"]).resolve()
+    # Determine allowed directories for write operations
+    allowed_dirs: set[Path] | None = None
+    is_sub_agent = _agent_params is not None
+
+    if is_sub_agent:
+        sub_work_dir = Path(_agent_params["work_dir"]).resolve()
+        allowed_dirs = {sub_work_dir}
+    else:
+        from src.storage import storage
+        raw_dirs = storage.prefs.working_directories
+        if raw_dirs:
+            allowed_dirs = {Path(d).expanduser().resolve() for d in raw_dirs}
+
+    def _check_in_allowed(target: Path, label: str) -> str | None:
+        for ad in allowed_dirs:
+            try:
+                target.relative_to(ad)
+                return None
+            except ValueError:
+                continue
+        dirs_str = ", ".join(str(d) for d in allowed_dirs)
+        return (
+            f"Error: {label} '{target}' is outside the allowed "
+            f"directory/directories ({dirs_str}). "
+            f"{'All files must stay inside your session folder.' if is_sub_agent else 'Configure working directories in Settings.'}"
+        )
+
+    if allowed_dirs is not None:
         if workdir:
             requested = Path(workdir).resolve()
-            try:
-                requested.relative_to(allowed_dir)
-            except ValueError:
-                return (
-                    f"Error: workdir '{workdir}' is outside the allowed session folder "
-                    f"'{allowed_dir}'. All files must stay inside your session folder."
-                )
+            err = _check_in_allowed(requested, "workdir")
+            if err:
+                return err
             workdir = str(requested)
-        else:
-            workdir = str(allowed_dir)
+        elif is_sub_agent:
+            workdir = str(list(allowed_dirs)[0])
 
-        # Best-effort: detect redirects to absolute paths outside allowed_dir
-        def _inspect_redirect_target(target: str) -> str | None:
+        # Best-effort: detect redirects to absolute paths outside allowed dirs
+        def _inspect_path(target: str) -> str | None:
             t = target.strip().strip("\"'")
             if t.startswith("~/"):
                 t = str(Path.home() / t[2:])
             if t.startswith("/"):
                 p = Path(t).resolve()
-                try:
-                    p.relative_to(allowed_dir)
-                except ValueError:
+                err = _check_in_allowed(p, "command writes to")
+                if err:
                     return str(p)
             return None
 
         parts = command.split()
         for i, token in enumerate(parts):
             if token in (">", ">>") and i + 1 < len(parts):
-                off_limit = _inspect_redirect_target(parts[i + 1])
+                off_limit = _inspect_path(parts[i + 1])
                 if off_limit:
                     return (
                         f"Error: command writes to '{off_limit}' which is outside the "
-                        f"allowed session folder '{allowed_dir}'. All files must stay "
-                        f"inside your session folder."
+                        f"allowed directory/directories ({', '.join(str(d) for d in allowed_dirs)}). "
+                        f"{'All files must stay inside your session folder.' if is_sub_agent else 'Configure working directories in Settings.'}"
                     )
     if timeout < 1:
         timeout = 1
