@@ -9,10 +9,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-DB_PATH = str(Path.home() / ".simplexai" / "chats.db")
+DB_DIR = Path.home() / ".simplexai" / "db"
+DB_PATH = str(DB_DIR / "chats.db")
 
 def init_db():
     """Initializes the database schema if it doesn't exist."""
+    DB_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (

@@ -6,6 +6,7 @@ You can delegate PDF creation tasks to the `create_pdf` agent. Use it whenever t
 
 ## allowed_tools
 generate_pdf
+task_done
 write_html
 read_file
 read_document

@@ -10,3 +10,7 @@ __pycache__/
 .venv
 # Virtual environments
 wheels/
+
+# Runtime user data
+chats.db
+user_settings.json

@@ -13,6 +13,7 @@ from src.storage import storage
 from src.engine.chat import stream_chat
 from src.engine.tools import registry
 from src.engine.agents import activity_callback, agent_stream_callback
+from src.engine.context import compress_messages
 
 
 def _debug(msg: str):
@@ -294,6 +295,13 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
             "content": total_response or None,
             "reasoning_content": total_reasoning or None
         })
+
+        # Context compression: if context exceeds max_context, compress old messages
+        compressed = await compress_messages(state.messages)
+        if compressed is not state.messages:
+            state.messages = compressed
+            _debug(f"Context compressed — messages_count reduced to {len(state.messages)}")
+
         _debug(f"Saving to DB — session_id={state.current_session_id}, messages_count={len(state.messages)}, title={state.chat_title}")
         db.save_session(state.current_session_id, state.chat_title, state.messages)
         _debug("DB save complete")
@@ -310,6 +318,9 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                 "content": total_response or None,
                 "reasoning_content": total_reasoning or None
             })
+            compressed = await compress_messages(state.messages)
+            if compressed is not state.messages:
+                state.messages = compressed
             _debug(f"Saving partial response on cancel ({len(total_response)} content, {len(total_reasoning)} reasoning chars)")
             db.save_session(state.current_session_id, state.chat_title, state.messages)
             refresh_sidebar()

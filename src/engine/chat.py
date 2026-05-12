@@ -13,6 +13,7 @@ import litellm
 from src.config import settings, logger
 from src.engine.tools import registry as tool_registry
 from src.engine.agents import agent_registry
+from src.engine.skills import skill_registry
 
 log = logging.getLogger("simplex.engine.chat")
 
@@ -131,7 +132,7 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
     cumulative_cost = 0.0
     while True:
         round_num += 1
-        tools = tool_registry.get_schemas() + agent_registry.get_schemas()
+        tools = tool_registry.get_schemas() + agent_registry.get_schemas() + skill_registry.get_schemas()
         api_messages = sanitize_messages(messages)
         tool_count = len([m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")])
         
@@ -295,8 +296,10 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
             t0 = time.time()
             if name in tool_registry:
                 result = await tool_registry.call(name, args)
-            else:
+            elif name in agent_registry:
                 result = await agent_registry.call(name, args)
+            else:
+                result = await skill_registry.call(name, args)
             elapsed = time.time() - t0
             result_summary = str(result)[:60]
             _debug(f"TOOL RESULT [{name}]: result_len={len(str(result))}, preview={result_summary}, elapsed={elapsed:.2f}s")

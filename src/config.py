@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     
     temperature: float = Field(default=0.7, validation_alias=AliasChoices("simplex_temperature", "temperature"))
     max_tokens: int = Field(default=4096, validation_alias=AliasChoices("simplex_max_tokens", "max_tokens"))
+
+    max_context: int = Field(default=80000, validation_alias=AliasChoices("simplex_max_context", "max_context"))
+    min_context: int = Field(default=4000, validation_alias=AliasChoices("simplex_min_context", "min_context"))
+
     system_prompt: str = Field(
         default="You are Simplex AI, a helpful office assistant.",
         validation_alias=AliasChoices("simplex_system_prompt", "system_prompt")
