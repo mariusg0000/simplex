@@ -1,5 +1,7 @@
 """
-src/engine/tools.py · Tool System · ToolRegistry with dynamic discovery + @tool decorator.
+src/engine/tools.py · ToolRegistry singleton + _agent_params injection.
+Discovers tool modules dynamically (built-in and custom), manages visibility
+scopes, injects sub-agent context via ContextVar. Depends on: importlib, inspect.
 """
 
 import asyncio
@@ -13,12 +15,26 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, get_type
 log = logging.getLogger("simplex.engine.tools")
 
 agent_params_ctx: ContextVar[Optional[dict]] = ContextVar("agent_params", default=None)
+"""
+ContextVar carrying the active sub-agent's parameters (work_dir, etc.).
+Set by AgentRegistry.call() before running a sub-agent; read by ToolRegistry.call()
+to inject _agent_params into tool executors that accept it (e.g. bash, task_done).
+"""
 
 BUILTIN_TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 CUSTOM_TOOLS_DIR = Path.home() / ".simplexai" / "tools"
 
 
-def _make_async_wrapper(execute_fn):
+def _make_async_wrapper(execute_fn: Callable) -> Callable:
+    """
+    WHAT:    Wraps a sync or async execute() function into a standardised async callable.
+    WHY:     ToolRegistry stores a uniform async interface; raw modules may have
+             sync or async execute(). This wrapper normalises both to async → str.
+    HOW:     Calls the original function, awaits if it returns a coroutine, wraps
+             the result in str(). Preserves __name__ and __qualname__ for logging.
+    PARAMS:  execute_fn: Callable — the module's execute() function
+    RETURNS: Callable — async wrapper with signature **kwargs → str
+    """
     async def wrapper(**kwargs):
         result = execute_fn(**kwargs)
         if asyncio.iscoroutine(result):
@@ -31,19 +47,33 @@ def _make_async_wrapper(execute_fn):
 
 class ToolRegistry:
     """
-    Registry for LLM-accessible tools.
-    Discovers tool modules from src/tools/ and ~/.simplexai/tools/ automatically.
-    Also supports the @tool decorator for backward compatibility.
+    WHAT:    Singleton registry that discovers, registers, and invokes LLM-accessible tools.
+    WHY:     Centralises tool lifecycle: filesystem discovery (src/tools/, ~/.simplexai/tools/),
+             schema generation for the LLM, visibility filtering (main-agent vs sub-agent),
+             and _agent_params injection for sandbox enforcement.
+    HOW:     On first access, scans tool directories for .py modules with get_description()
+             and execute() exports. Each tool is wrapped in an async callable and registered
+             with its OpenAI function schema. The @tool decorator provides runtime registration
+             as an alternative. call() handles _agent_params injection from the ContextVar.
     """
 
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls) -> "ToolRegistry":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
+        """
+        INIT:   _tools — dict[name → async_callable]
+                _tool_executors — dict[name → raw module.execute] (for sig inspection)
+                schemas — list of OpenAI function schemas
+                _tool_visibility — dict[name → {"main_agent": bool}]
+                _disabled — set of tool names disabled at runtime
+                _discovered — one-shot flag (avoids re-scanning filesystem)
+                on_confirmation_required — UI hook for destructive command approval
+        """
         if hasattr(self, '_initialized'):
             return
         self._initialized = True
@@ -55,14 +85,30 @@ class ToolRegistry:
         self._discovered = False
         self.on_confirmation_required: Optional[Callable[[str, str, str], Awaitable[bool]]] = None
 
-    def _ensure_discovered(self):
+    def _ensure_discovered(self) -> None:
+        """
+        WHAT:    One-shot lazy trigger for filesystem discovery.
+        WHY:     Discovery runs on first tool access (not on __init__) so that
+                 config and directories are ready. Subsequent calls are no-ops.
+        """
         if self._discovered:
             return
         self._discovered = True
         self._discover(BUILTIN_TOOLS_DIR, "built-in")
         self._discover(CUSTOM_TOOLS_DIR, "custom")
 
-    def _discover(self, directory: Path, source_label: str):
+    def _discover(self, directory: Path, source_label: str) -> None:
+        """
+        WHAT:    Scans a directory for .py tool modules and registers valid ones.
+        WHY:     Plugin system — drop a .py file with get_description() + execute()
+                 and the tool is immediately available. Custom tools in
+                 ~/.simplexai/tools/ override built-ins with the same name.
+        HOW:     Dynamically imports each .py via importlib. Validates required exports
+                 (get_description, execute). Reads optional get_visibility() for
+                 main-agent filtering. Duplicate names replace the existing schema.
+        PARAMS:  directory: Path — folder to scan
+                 source_label: str — "built-in" or "custom" (for logging)
+        """
         if not directory.exists():
             return
         for filepath in sorted(directory.iterdir()):
@@ -84,7 +130,6 @@ class ToolRegistry:
                     continue
 
                 name = filepath.stem
-                # Optional per-tool visibility declaration
                 if hasattr(module, "get_visibility"):
                     self._tool_visibility[name] = module.get_visibility()
                 else:
@@ -105,6 +150,17 @@ class ToolRegistry:
                 log.error(f"Failed to load tool {filepath.name}: {e}")
 
     def register(self, func: Callable) -> Callable:
+        """
+        WHAT:    Registers a function as a tool at runtime (alternative to filesystem discovery).
+        WHY:     Backward-compatible @tool decorator support. Allows lightweight tools
+                 defined inline without a separate .py file on disk.
+        HOW:     Infers the OpenAI schema from the function's signature and docstring:
+                 parameter types → JSON types, default-less params → required.
+                 If a tool with the same name already exists, it's NOT replaced
+                 (filesystem discovery has priority).
+        PARAMS:  func: Callable — the tool function (sync or async)
+        RETURNS: Callable — the same func, unchanged
+        """
         self._ensure_discovered()
         name = func.__name__
         if name in self._tools:
@@ -188,8 +244,14 @@ class ToolRegistry:
         return [s for s in self.schemas if s["function"]["name"] not in self._disabled]
 
     def get_main_agent_schemas(self) -> List[Dict[str, Any]]:
-        """Return tool schemas visible to the main agent.
-        Filters out tools whose get_visibility() sets main_agent=False.
+        """
+        WHAT:    Returns schemas for tools visible to the main agent.
+        WHY:     Sub-agent-only tools (e.g. task_done, generate_pdf) must be hidden
+                 from the main agent's LLM to prevent incorrect invocations.
+        HOW:     Filters self.schemas by _tool_visibility: tools with
+                 get_visibility() returning {"main_agent": False} are excluded.
+        PARAMS:  none (uses self.schemas, self._tool_visibility, self._disabled)
+        RETURNS: list[dict] — filtered OpenAI tool schemas
         """
         self._ensure_discovered()
         main_tools = {name for name, vis in self._tool_visibility.items()
@@ -199,6 +261,23 @@ class ToolRegistry:
                 and s["function"]["name"] in main_tools]
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:
+        """
+        WHAT:    Invokes a registered tool by name with the given arguments.
+        WHY:     Entry point for both main-agent and sub-agent tool execution.
+                 Handles _agent_params injection (sub-agent sandbox context)
+                 and normalises sync/async execution behind a uniform awaitable.
+        HOW:     1. Looks up the tool by name; returns error if not found.
+                 2. Reads agent_params_ctx; if present and the tool's raw execute()
+                    accepts _agent_params, injects it into arguments.
+                 3. Calls the registered async wrapper (sync → str normalised).
+                 4. Catches all exceptions and returns them as error strings
+                    (tools never raise — they always return strings).
+        PARAMS:  name: str — tool name (filename stem or @tool function name)
+                 arguments: Dict[str, Any] — keyword arguments for the tool
+        RETURNS: str — tool output (file content, command result, or error message)
+        ERRORS:  Tool not found → "Error: Tool '...' not found."
+                 Execution exception → "Error executing tool '...': {details}"
+        """
         self._ensure_discovered()
         if name not in self._tools:
             return f"Error: Tool '{name}' not found."
@@ -228,4 +307,11 @@ registry = ToolRegistry()
 
 
 def tool(func: Callable) -> Callable:
+    """
+    WHAT:    Decorator that registers a function as a tool at runtime.
+    WHY:     Provides an inline alternative to filesystem-based tool discovery
+             for simple tools defined within the codebase.
+    PARAMS:  func: Callable — the tool function
+    RETURNS: Callable — the same func (registry stores a copy)
+    """
     return registry.register(func)

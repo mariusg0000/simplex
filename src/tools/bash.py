@@ -1,3 +1,10 @@
+"""
+src/tools/bash.py · Shell command execution tool with sandbox enforcement.
+Executes shell commands, enforces working directory restrictions for sub-agents,
+detects dangerous patterns, and supports user confirmation for destructive ops.
+Depends on: asyncio.subprocess, ToolRegistry, storage (for working_directories config).
+"""
+
 import asyncio
 import logging
 import os
@@ -17,6 +24,8 @@ MAX_CHARS = 50 * 1024
 SENTINEL = "___EXEC_RESULTS___"
 
 DANGEROUS_PATTERNS: list[tuple[str, str]] = [
+    # (regex pattern, human-readable description of the risk)
+
     (r"\brm\b", "Deletes files/folders permanently."),
     (r"rmdir\b", "Deletes directories."),
     (r"git\s+clean\s+-[a-z]*[f]", "Deletes untracked files permanently."),
@@ -39,6 +48,17 @@ DANGEROUS_PATTERNS: list[tuple[str, str]] = [
 
 
 def _check_dangerous(command: str) -> Optional[str]:
+    """
+    WHAT:    Scans a shell command against known dangerous patterns.
+    WHY:     Prevents accidental data loss or system damage by flagging
+             destructive operations (rm, dd, mkfs, fork bombs, etc.) in
+             the DANGEROUS_PATTERNS list.
+    HOW:     Normalises the command to lowercase, then regex-searches each
+             pattern. Returns a concatenated description of all matches,
+             or None if the command appears safe.
+    PARAMS:  command: str — the raw shell command string
+    RETURNS: Optional[str] — semicolon-joined descriptions of matched risks, or None
+    """
     cmd_normalized = command.strip().lower()
     reasons = []
     for pattern, description in DANGEROUS_PATTERNS:
@@ -48,6 +68,13 @@ def _check_dangerous(command: str) -> Optional[str]:
 
 
 def _truncate_output(text: str) -> str:
+    """
+    WHAT:    Truncates tool output to MAX_CHARS (50 KiB) with a notice.
+    WHY:     LLM context windows are limited; unbounded command output would
+             consume tokens and risk exceeding the model's limit.
+    PARAMS:  text: str — raw command output
+    RETURNS: str — truncated text (if needed) with truncation notice appended
+    """
     total_chars = len(text)
     if total_chars > MAX_CHARS:
         text = text[:MAX_CHARS]
@@ -56,6 +83,14 @@ def _truncate_output(text: str) -> str:
 
 
 def get_description() -> dict:
+    """
+    WHAT:    Returns the OpenAI tool schema for the bash tool.
+    WHY:     Required by ToolRegistry for dynamic discovery; defines the
+             parameters the LLM may supply (command, explanation, timeout,
+             workdir, need_confirmation).
+    PARAMS:  none
+    RETURNS: dict — tool schema with "command" and "explanation" as required
+    """
     return {
         "description": "Execute a shell command and return its output (stdout + stderr combined). Output is truncated at 500 lines or 50 KB. Use this to run terminal commands, scripts, or system operations. Set need_confirmation=True for destructive commands.",
         "parameters": {
@@ -88,7 +123,37 @@ def get_description() -> dict:
 
 
 async def execute(command: str, explanation: str, timeout: int = 30, need_confirmation: bool = False, workdir: Optional[str] = None, _agent_params: dict = None) -> str:
-    # Determine allowed directories for write operations
+    """
+    WHAT:    Executes a shell command with sandbox enforcement and danger detection.
+    WHY:     The LLM needs general-purpose shell access for file manipulation, code
+             execution, and system operations. This tool provides that access while
+             preventing damage via three layers: workdir sandboxing (sub-agents) or
+             working_directories config (main agent), dangerous-command patterns, and
+             optional user confirmation for destructive operations.
+    HOW:     1. Resolves allowed directories from _agent_params (sub-agent) or
+               storage.prefs.working_directories (main agent).
+             2. Validates the requested workdir and detects > / >> redirects to
+               absolute paths outside the allowed directories.
+             3. Clamps timeout to [1, 120] seconds.
+             4. Runs _check_dangerous() on the command; if matches are found or
+               need_confirmation=True, fires the UI confirmation callback.
+             5. Executes via asyncio.create_subprocess_shell with the custom venv
+               PATH and a sentinel (___EXEC_RESULTS___) to capture exit codes.
+             6. Decodes output, strips the sentinel line, truncates if needed.
+    PARAMS:  command: str — the shell command to execute
+             explanation: str — plain-language description (for user confirmation UI)
+             timeout: int — max seconds (clamped to 1-120, default 30)
+             need_confirmation: bool — if True, requires user approval before running
+             workdir: str or None — working directory (must be within allowed dirs)
+             _agent_params: dict or None — injected by ToolRegistry; carries work_dir
+    RETURNS: str — stdout+stderr output, or error message, or success notice
+    ERRORS:  workdir outside sandbox → "Error: workdir '...' is outside the allowed..."
+             command writes outside sandbox → "Error: command writes to '...' outside..."
+             command timed out → "Error: Command timed out..."
+             command not found → "Error: Command not found — ..."
+             user rejects → "User did not approve this operation..."
+             execute exception → "Error executing command: {details}"
+    """
     allowed_dirs: set[Path] | None = None
     is_sub_agent = _agent_params is not None
 
@@ -102,6 +167,16 @@ async def execute(command: str, explanation: str, timeout: int = 30, need_confir
             allowed_dirs = {Path(d).expanduser().resolve() for d in raw_dirs}
 
     def _check_in_allowed(target: Path, label: str) -> str | None:
+        """
+        WHAT:    Checks whether a Path is inside any of the allowed directories.
+        WHY:     Core of the sandbox enforcement — both workdir validation and
+                 redirect-path inspection call this to reject out-of-bounds paths.
+        HOW:     Uses Path.relative_to() against each allowed dir. If any returns
+                 a relative path (no ValueError), the target is contained.
+        PARAMS:  target: Path — the path to check
+                 label: str — human-readable label for the error message
+        RETURNS: str (error message) if outside, None if within allowed dirs
+        """
         for ad in allowed_dirs:
             try:
                 target.relative_to(ad)
@@ -125,8 +200,18 @@ async def execute(command: str, explanation: str, timeout: int = 30, need_confir
         elif is_sub_agent:
             workdir = str(list(allowed_dirs)[0])
 
-        # Best-effort: detect redirects to absolute paths outside allowed dirs
         def _inspect_path(target: str) -> str | None:
+            """
+            WHAT:    Detects if a file redirect target writes outside allowed dirs.
+            WHY:     Best-effort sandbox enforcement — the LLM could bypass this
+                     by using Python open() or mv inside a script, but catching
+                     obvious shell-level redirects (> / >>) prevents the most
+                     common escape vector.
+            HOW:     Strips quotes, expands ~/, resolves absolute paths, and
+                     checks containment via _check_in_allowed.
+            PARAMS:  target: str — the argument after > or >>
+            RETURNS: str (the offending path) if outside allowed dirs, else None
+            """
             t = target.strip().strip("\"'")
             if t.startswith("~/"):
                 t = str(Path.home() / t[2:])

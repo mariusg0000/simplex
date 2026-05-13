@@ -1,5 +1,7 @@
 """
-src/engine/agents.py · Sub-agent architecture + AgentRegistry for .md agents.
+src/engine/agents.py · Sub-agent architecture + AgentRegistry + ToolCapableAgent.
+Discovers and runs .md-defined agents with session isolation, tool access, and
+streaming LLM interaction. Depends on: litellm, ToolRegistry (tools.py), settings (config.py).
 """
 
 import asyncio
@@ -25,6 +27,19 @@ AGENTS_CUSTOM_DIR = Path.home() / ".simplexai" / "agents"
 
 @dataclass
 class AgentDef:
+    """
+    WHAT:    Parsed definition of a single agent from its .md file.
+    WHY:     Provides a typed contract between the .md declarative format and
+             the runtime logic in AgentRegistry and ToolCapableAgent.
+    FIELDS:  name: str — filename stem
+             enabled: bool — parsed from ## enabled
+             description: str — LLM-facing summary from ## agent_description
+             allowed_tools: list[str] — tool names the agent may call
+             role_prompt: str — system prompt from ## role_prompt (may contain {work_dir})
+             execute_script: str — Python code that creates a session folder (optional)
+             done_tool: str — tool name that signals completion (default "task_done")
+             model: str — model override for this agent (empty = use default)
+    """
     name: str
     enabled: bool
     description: str
@@ -36,6 +51,15 @@ class AgentDef:
 
 
 def _parse_agent_md(content: str) -> dict:
+    """
+    WHAT:    Parses an agent .md file into a dict of section_name → body.
+    WHY:     Agents are authored in markdown with ## section headers; this parser
+             extracts each section as raw text for structured field extraction.
+    HOW:     Iterates lines, matching ## <section> headers. Everything between
+             headers belongs to the preceding section. Section names are lowercased.
+    PARAMS:  content: str — raw text of the .md file
+    RETURNS: dict[str, str] — section name → body (empty dict if no sections)
+    """
     sections = {}
     pattern = r'^##\s+(\S+)\s*$'
     lines = content.split('\n')
@@ -59,13 +83,31 @@ def _parse_agent_md(content: str) -> dict:
 
 
 class AgentRegistry:
+    """
+    WHAT:    Singleton registry that discovers, validates, and runs .md-defined agents.
+    WHY:     Centralises agent lifecycle: discovery (from built-in and custom dirs),
+             schema generation for the LLM, and invocation with session isolation.
+    HOW:     Auto-discovers .md files on init from src/agents/ and ~/.simplexai/agents/.
+             Each agent is parsed into an AgentDef. The call() method creates a
+             sandboxed ToolCapableAgent that executes the task with its own tool set.
+    """
     def __init__(self):
         self._agents: dict[str, AgentDef] = {}
         self._disabled: set[str] = set()
         self._discover(AGENTS_BUILTIN_DIR, "built-in")
         self._discover(AGENTS_CUSTOM_DIR, "custom")
 
-    def _discover(self, directory: Path, source_label: str):
+    def _discover(self, directory: Path, source_label: str) -> None:
+        """
+        WHAT:    Scans a directory for .md agent files and registers valid ones.
+        WHY:     Enables the plugin-like agent system: drop a .md file and it's
+                 immediately available, without code changes.
+        HOW:     Reads each .md, parses sections, validates required fields
+                 (enabled, agent_description, allowed_tools, role_prompt), and
+                 creates an AgentDef. Malformed files are logged and skipped.
+        PARAMS:  directory: Path — folder to scan
+                 source_label: str — "built-in" or "custom" (for logging)
+        """
         if not directory.exists():
             return
         for filepath in sorted(directory.iterdir()):
@@ -124,6 +166,14 @@ class AgentRegistry:
         return "\n\n".join(parts)
 
     def get_schemas(self) -> list[dict]:
+        """
+        WHAT:    Builds OpenAI function-calling schemas for all enabled agents.
+        WHY:     The main agent's LLM sees these as callable functions; selecting
+                 one triggers agent_registry.call(). The work_dir parameter is
+                 conditionally exposed for agents with execute_script (workspace reuse).
+        PARAMS:  none (uses self._agents, self._disabled)
+        RETURNS: list[dict] — OpenAI tool schemas, one per enabled agent
+        """
         schemas = []
         for name, agent in self._agents.items():
             if agent.enabled and name not in self._disabled:
@@ -157,6 +207,23 @@ class AgentRegistry:
         return schemas
 
     async def call(self, name: str, arguments: dict) -> str:
+        """
+        WHAT:    Invokes a registered agent by name with the given arguments.
+        WHY:     Entry point called by the main agent's tool loop. Handles session
+                 setup (new or reused), {work_dir} placeholder resolution, sandbox
+                 context injection, and result enrichment with session folder info.
+        HOW:     1. Resolves work_dir: runs execute_script (new) or reuses existing folder.
+                2. Sets agent_params_ctx so bash tool enforces sandbox.
+                3. Replaces {work_dir} in the role prompt with the actual path.
+                4. Creates a ToolCapableAgent and runs the task with streaming.
+                5. Appends [Session folder: ...] to the result for caller reuse.
+        PARAMS:  name: str — agent filename stem (e.g. "create_doc")
+                 arguments: dict — must contain "task", may contain "work_dir"
+        RETURNS: str — the agent's final output (typically a file path or summary)
+        ERRORS:  Agent not found → "Error: Agent '...' not found."
+                 work_dir invalid → "Error: Specified work_dir ... does not exist"
+                 execute_script fails → "Error: Failed to initialize agent workspace: ..."
+        """
         agent = self._agents.get(name)
         if not agent:
             return f"Error: Agent '{name}' not found."
@@ -360,6 +427,16 @@ class RerankerAgent(SubAgent):
 
 
 class ToolCapableAgent:
+    """
+    WHAT:    Multi-turn LLM agent that calls tools in a loop until done.
+    WHY:     Sub-agents (create_doc, etc.) need tool access, streaming output,
+             and self-termination without main-agent round-trips. This class
+             provides the core loop: LLM → tool call → tool result → repeat.
+    HOW:     Maintains its own message history. At each round: calls LLM with
+             allowed tool schemas, streams response, executes tool calls via
+             ToolRegistry, checks for _AGENT_DONE_ auto-termination, repeats
+             up to max_rounds. State is in self.messages (no external DB).
+    """
     def __init__(
         self,
         name: str,
@@ -369,6 +446,14 @@ class ToolCapableAgent:
         max_rounds: int = 20,
         done_tool_name: str = "task_done",
     ):
+        """
+        PARAMS:  name: str — agent identifier (for logging)
+                 role_prompt: str — system prompt, may be pre-resolved by AgentRegistry
+                 allowed_tools: list[str] or None — tool names the agent may call
+                 allowed_cli: list[str] or None — CLI prompt keys for bash context
+                 max_rounds: int — max LLM+tool cycles before forced termination
+                 done_tool_name: str — tool called to signal completion
+        """
         self.name = name
         self.role_prompt = role_prompt
         self.allowed_tools: Set[str] = set(allowed_tools or [])
@@ -378,6 +463,14 @@ class ToolCapableAgent:
         self.messages: list[dict] = []
 
     def _build_system_prompt(self) -> str:
+        """
+        WHAT:    Assembles the final system prompt by appending CLI docs.
+        WHY:     CLI-heavy agents (like create_doc) need explicit docs for
+                 bash commands (weasyprint, python3 flags, etc.). These are
+                 loaded from cli_prompts.toml and appended to the role prompt.
+        PARAMS:  none (uses self.allowed_cli, self.role_prompt)
+        RETURNS: str — combined system prompt
+        """
         from src.prompts import load_cli_prompts
         prompts = load_cli_prompts()
         cli_sections = [prompts[k] for k in self.allowed_cli if k in prompts]
@@ -387,6 +480,13 @@ class ToolCapableAgent:
         return self.role_prompt
 
     def _get_allowed_schemas(self) -> list[dict]:
+        """
+        WHAT:    Filters tool schemas to only those in self.allowed_tools.
+        WHY:     Restricts the LLM's tool choice to the agent's permitted set.
+                 When allowed_tools is empty/None, all registry tools are exposed.
+        PARAMS:  none (uses self.allowed_tools, registry.schemas)
+        RETURNS: list[dict] — filtered OpenAI tool schemas
+        """
         if not self.allowed_tools:
             return registry.get_schemas()
         return [s for s in registry.schemas if s["function"]["name"] in self.allowed_tools]
@@ -401,6 +501,29 @@ class ToolCapableAgent:
         on_stream: Optional[Callable[[AgentStreamChunk], None]] = None,
         dynamic_context: Optional[str] = None,
     ) -> str:
+        """
+        WHAT:    Main multi-turn tool-calling loop. Calls LLM, streams output,
+                 executes tool calls, checks for auto-termination, repeats.
+        WHY:     Sub-agents need an autonomous loop without main-agent involvement.
+                 The LLM decides when it's done (no tool calls or _AGENT_DONE_).
+        HOW:     Per round:
+                 1. Calls litellm.acompletion with streaming + tool schemas.
+                 2. Consumes the stream: reasoning/content chunks + coalesced emit.
+                 3. If no tool calls → agent is done, returns content.
+                 4. Otherwise executes each tool call via registry.call().
+                 5. _AGENT_DONE_ prefix → auto-terminate with the result.
+                 6. max_rounds exceeded → injects a fallback prompt then force-ends.
+        PARAMS:  task_input: str — the user's task description
+                 model_override: Optional[str] — model name or None for default
+                 on_step: Optional[Callable[[AgentStep], None]] — activity log callback
+                 on_stream: Optional[Callable[[AgentStreamChunk], None]] — live streaming callback
+                 dynamic_context: Optional[str] — extra context appended to system prompt
+        RETURNS: str — the agent's final output (file path, summary, or error)
+        ERRORS:  CancelledError → "Error: Task cancelled by user."
+                 LLM/completion error → "Error: <details>"
+                 Streaming error → "Error: Streaming failed: <details>"
+                 Max rounds exhausted → "Error: Max rounds reached without final response."
+        """
         system_prompt = self._build_system_prompt()
         if dynamic_context:
             system_prompt += "\n\n" + dynamic_context
@@ -414,7 +537,6 @@ class ToolCapableAgent:
         while round_num <= self.max_rounds:
             log.info("┌─ %s round %d/%d", self.name, round_num, self.max_rounds)
 
-            # --- STREAMING LLM CALL ---
             schemas = self._get_allowed_schemas()
             if on_step:
                 on_step(AgentStep(self.name, round_num, "llm_call", "Thinking..."))
@@ -442,7 +564,6 @@ class ToolCapableAgent:
                     on_step(AgentStep(self.name, round_num, "error", str(e)))
                 return f"Error: {str(e)}"
 
-            # --- CONSUME STREAM ---
             full_reasoning = ""
             full_content = ""
             tool_calls_stream: dict[int, dict] = {}
@@ -494,13 +615,11 @@ class ToolCapableAgent:
                     on_step(AgentStep(self.name, round_num, "error", f"Stream error: {e}"))
                 return f"Error: Streaming failed: {e}"
 
-            # Flush remaining stream buffer
             if on_stream:
                 for ct in ("reasoning", "content"):
                     if buf[ct]:
                         on_stream(AgentStreamChunk(self.name, round_num, ct, buf[ct]))
 
-            # --- RECONSTRUCT MESSAGE FROM STREAM ---
             reasoning = full_reasoning or ""
             tc_list = []
             for idx in sorted(tool_calls_stream.keys()):
@@ -524,7 +643,6 @@ class ToolCapableAgent:
                     on_step(AgentStep(self.name, round_num, "done", output[:200]))
                 return output
 
-            # Build assistant message for history (identical format to non-streaming)
             assistant_msg = {"role": "assistant", "content": full_content or None}
             if reasoning:
                 assistant_msg["reasoning_content"] = reasoning

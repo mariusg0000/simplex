@@ -1,5 +1,8 @@
 """
-src/engine/chat.py · LLM streaming engine · Handles async communication with LiteLLM.
+src/engine/chat.py · Main LLM streaming loop · multi-turn tool execution.
+The core chat engine: sanitises messages, calls LiteLLM with streaming,
+yields reasoning/content/tool events, dispatches tool/agent/skill calls,
+and repeats until done. Depends on: litellm, ToolRegistry, AgentRegistry, SkillRegistry.
 """
 
 import asyncio
@@ -20,8 +23,13 @@ log = logging.getLogger("simplex.engine.chat")
 _LOG_FILE = Path("/tmp/simplex_debug.log")
 
 
-def _debug(msg: str):
-    """Print debug message to stderr and append to /tmp/simplex_debug.log."""
+def _debug(msg: str) -> None:
+    """
+    WHAT:    Writes a timestamped debug line to stderr and /tmp/simplex_debug.log.
+    WHY:     Persistent debug log that survives terminal restarts; used for
+             diagnosing LLM round contents without relying on the UI.
+    PARAMS:  msg: str — the debug message to write
+    """
     line = f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [CHAT_DEBUG] {msg}"
     print(line, file=sys.stderr, flush=True)
     try:
@@ -31,8 +39,15 @@ def _debug(msg: str):
         pass
 
 
-def _truncate_json(obj, max_len=500) -> str:
-    """JSON-dump with truncation of long string values."""
+def _truncate_json(obj: Any, max_len: int = 500) -> str:
+    """
+    WHAT:    JSON-dumps an object, truncating string values longer than max_len.
+    WHY:     Debug logging of full API payloads would flood the log; this keeps
+             the structure visible while limiting each string field's size.
+    PARAMS:  obj: Any — object to serialise
+             max_len: int — max char length per string value (default 500)
+    RETURNS: str — pretty-printed JSON with truncated strings
+    """
     def _shorten(v):
         if isinstance(v, str) and len(v) > max_len:
             return v[:max_len] + f"...<truncated {len(v)-max_len} chars>"
@@ -40,7 +55,6 @@ def _truncate_json(obj, max_len=500) -> str:
     truncated = _shorten(json.dumps(obj, indent=2, ensure_ascii=False))
     return truncated
 
-# Configure litellm
 if settings.openai_api_base:
     litellm.api_base = settings.openai_api_base
 litellm.drop_params = True # Standardize non-OpenAI responses
@@ -62,30 +76,23 @@ def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     temp_messages = []
     for m in messages:
         role = m.get("role")
-        # Filter allowed fields
         if role == "tool":
             clean_m = {k: v for k, v in m.items() if k in ["role", "content", "tool_call_id", "name"]}
         else:
             clean_m = {k: v for k, v in m.items() if k in ["role", "content", "tool_calls", "name", "reasoning_content"]}
         
-        # MANDATORY: Content must NOT be null/None EXCEPT for assistant tool calls
-        # In fact, some strict proxies reject content entirely if tool_calls is present.
+        # Mandatory: some providers reject content entirely when tool_calls is present
         if role == "assistant" and "tool_calls" in clean_m:
             if not clean_m.get("content"):
                 clean_m.pop("content", None)
-            else:
-                # If content exists, keep it as is
-                pass
         elif clean_m.get("content") is None:
             clean_m["content"] = ""
             
-        # Ensure tool_calls is a list if it exists and is not empty
         if "tool_calls" in clean_m and not clean_m["tool_calls"]:
             del clean_m["tool_calls"]
             
         temp_messages.append(clean_m)
     
-    # Step 2: Enforce sequence integrity (Assistant Call -> Tool Response)
     final_sanitized = []
     i = 0
     while i < len(temp_messages):
@@ -118,8 +125,27 @@ def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str, str]]:
     """
-    Streams reasoning, tools, and content from the LLM.
-    Handles the multi-turn tool execution loop.
+    WHAT:    Main AI loop: LLM streaming + multi-turn tool execution.
+    WHY:     The highest-level engine — orchestrates the full conversation:
+             sanitises messages → calls LLM (streaming) → dispatches tools,
+             agents, and skills → repeats until the LLM produces content
+             without tool calls.
+    HOW:     1. Combines tool/agent/skill schemas into a single tool list.
+             2. Sanitises messages for API compatibility.
+             3. Calls litellm.acompletion with streaming.
+             4. Consumes the stream: yields reasoning/content chunks in real
+                time, accumulates tool_calls.
+             5. On finish_reason="stop": yields usage stats + cost, breaks.
+             6. On tool_calls: assembles the assistant message, dispatches
+                each call to the appropriate registry (tool → AgentRegistry /
+                ToolRegistry / SkillRegistry), appends results to messages,
+                and continues the while loop.
+    PARAMS:  messages: List[Dict[str, str]] — the mutable chat history; new
+                       assistant + tool messages are appended in-place.
+    RETURNS: AsyncIterable[Dict[str, str]] — event stream with types:
+             "content", "reasoning", "tool", "status", "usage"
+    ERRORS:  litellm exception → yields error status + content, then breaks
+             stream timeout (120s) → yields timeout error status, breaks
     """
     round_num = 0
     total_assistant = 0
@@ -135,8 +161,6 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
         tools = tool_registry.get_main_agent_schemas() + agent_registry.get_schemas() + skill_registry.get_schemas()
         api_messages = sanitize_messages(messages)
         tool_count = len([m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")])
-        
-        # Count input tokens
         total_chars = sum(len(m.get("content", "") or "") for m in api_messages)
         try:
             input_tokens = litellm.token_counter(model=settings.model, messages=api_messages)
@@ -208,19 +232,16 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
 
             delta = chunk.choices[0].delta
 
-            # Handle reasoning
             reasoning = getattr(delta, "reasoning_content", None)
             if reasoning:
                 full_reasoning += reasoning
                 yield {"type": "reasoning", "content": reasoning}
 
-            # Handle content
             content = delta.content
             if content:
                 full_content += content
                 yield {"type": "content", "content": content}
 
-            # Handle tool calls streaming
             if hasattr(delta, "tool_calls") and delta.tool_calls:
                 for tc in delta.tool_calls:
                     idx = tc.index
@@ -235,7 +256,6 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
                 _debug(f"Stream finished via finish_reason={chunk.choices[0].finish_reason}")
                 break
 
-        # Count output tokens and update cost
         output_tokens = 0
         if full_content:
             try:
@@ -255,7 +275,6 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
 
         yield {"type": "usage", "context_tokens": input_tokens, "context_pct": context_pct, "cost": cumulative_cost}
 
-        # If we have content but no tool calls, we are done
         if not tool_calls_stream:
             _debug(f"LLM FINISHED — no tool calls. final_content_len={len(full_content)}, final_reasoning_len={len(full_reasoning)}")
             break
@@ -265,7 +284,6 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
             tc = tool_calls_stream[idx]
             _debug(f"  tool_call[{idx}]: {tc['name']}({tc['arguments'][:200]})")
 
-        # Process tool calls
         assistant_msg = {"role": "assistant", "content": full_content or None}
         if full_reasoning:
             assistant_msg["reasoning_content"] = full_reasoning
@@ -281,7 +299,6 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
         assistant_msg["tool_calls"] = formatted_tool_calls
         messages.append(assistant_msg)
 
-        # 2. Execute tools and add results
         for tc in formatted_tool_calls:
             name = tc["function"]["name"]
             args = json.loads(tc["function"]["arguments"])
