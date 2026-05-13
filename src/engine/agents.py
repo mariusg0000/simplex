@@ -694,7 +694,13 @@ class ToolCapableAgent:
                     log.info("└─ %s finished (_AGENT_DONE_)", self.name)
                     return done_result
 
-                round_tag = f"\n\n[Round {round_num}/{self.max_rounds}]"
+                remaining = self.max_rounds - round_num
+                round_tag = f"\n\n[Round {round_num}/{self.max_rounds}"
+                if remaining <= 3:
+                    round_tag += " 🛑 CRITICAL — finish now!"
+                elif remaining <= 6:
+                    round_tag += f" ⚠️ only {remaining} left"
+                round_tag += "]"
                 self.messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],

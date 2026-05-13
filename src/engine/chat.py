@@ -321,7 +321,13 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
             elapsed = time.time() - t0
             result_summary = str(result)[:60]
             _debug(f"TOOL RESULT [{name}]: result_len={len(str(result))}, preview={result_summary}, elapsed={elapsed:.2f}s")
-            round_tag = f"\n\n[Round {round_num}/{max_rounds}]"
+            remaining = max_rounds - round_num
+            round_tag = f"\n\n[Round {round_num}/{max_rounds}"
+            if remaining <= 3:
+                round_tag += " 🛑 CRITICAL — finish now!"
+            elif remaining <= 6:
+                round_tag += f" ⚠️ only {remaining} left"
+            round_tag += "]"
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],
