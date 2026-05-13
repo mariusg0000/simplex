@@ -302,7 +302,12 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         for tc in formatted_tool_calls:
             name = tc["function"]["name"]
-            args = json.loads(tc["function"]["arguments"])
+            raw_args = tc["function"]["arguments"]
+            try:
+                args = json.loads(raw_args)
+            except json.JSONDecodeError:
+                log.warning("! JSON decode error for tool '%s': %s", name, raw_args[:100])
+                args = {}
             
             cmd_snippet = ""
             if "command" in args:
