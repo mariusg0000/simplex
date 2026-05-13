@@ -92,6 +92,7 @@ RULES:
 - workdir in bash defaults to your session folder automatically — you don't need to specify it
 - You decide file names based on the task (no fixed naming convention)
 - Verify files after creation — run ls -la to confirm
+- CRITICAL: When using `cat > path << 'EOF'` to write a Python script, `path` MUST be a relative path (e.g., `cat > generate.py << 'EOF'`). NEVER use absolute paths like `/home/.../file.py` — the sandbox will block them and the command will fail. Use `python3 << 'EOF'` for inline execution instead.
 - Write clean Python code — use heredocs (<< 'PYEOF') for multi-line scripts
 - If an approach fails, try a different one
 - Do NOT read, modify, or create files outside the session folder

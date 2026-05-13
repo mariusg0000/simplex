@@ -187,7 +187,7 @@ async def execute(command: str, explanation: str, timeout: int = 30, need_confir
         return (
             f"Error: {label} '{target}' is outside the allowed "
             f"directory/directories ({dirs_str}). "
-            f"{'All files must stay inside your session folder.' if is_sub_agent else 'Configure working directories in Settings.'}"
+            f"{'All files must stay inside your session folder (' + str(list(allowed_dirs)[0]) + '). Use a relative path (e.g., cat > script.py << ...) or write to ' + str(list(allowed_dirs)[0]) + '/filename.' if is_sub_agent else 'Configure working directories in Settings.'}"
         )
 
     if allowed_dirs is not None:
