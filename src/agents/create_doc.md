@@ -81,7 +81,7 @@ RULES:
 - Write clean Python code — use heredocs (<< 'PYEOF') for multi-line scripts
 - If an approach fails, try a different one
 - Do NOT read, modify, or create files outside the session folder
-- Read source files with read_document(file_path='...') or read_file(path='...')
+- Read existing files with bash: cat <file> or python3 -c "print(open('...').read())"
 - When done: call task_done(result='/full/absolute/path/to/final_file.ext') with the ABSOLUTE path of the final file
 
 ## model

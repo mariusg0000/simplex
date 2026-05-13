@@ -168,6 +168,7 @@ class AgentRegistry:
         dynamic_context = ""
         token = None
         params_dict = None
+        resolved_prompt = agent.role_prompt
 
         if agent.execute_script:
             reuse_work_dir = arguments.get("work_dir")
@@ -212,12 +213,17 @@ class AgentRegistry:
                     else:
                         err_msg = stderr.decode().strip() or f"exit code {proc.returncode}"
                         log.error("✗ execute_script for '%s' failed: %s", name, err_msg)
+                        return f"Error: Failed to initialize agent workspace: {err_msg}"
                 except Exception as e:
                     log.error("✗ execute_script for '%s' error: %s", name, e)
+                    return f"Error: Failed to initialize agent workspace: {e}"
+
+            if params_dict and "work_dir" in params_dict:
+                resolved_prompt = agent.role_prompt.replace("{work_dir}", params_dict["work_dir"])
 
         tc_agent = ToolCapableAgent(
             name=name,
-            role_prompt=agent.role_prompt,
+            role_prompt=resolved_prompt,
             allowed_tools=agent.allowed_tools,
             done_tool_name=agent.done_tool,
         )
@@ -537,18 +543,6 @@ class ToolCapableAgent:
             for tc in formatted_calls:
                 name = tc["function"]["name"]
                 raw_args = tc["function"]["arguments"]
-
-                if name == self.done_tool_name:
-                    args = json.loads(raw_args)
-                    result = args.get("result", "")
-                    log.info("│ %s → done_tool '%s' with result=%s",
-                             self.name, name, result[:150])
-                    if on_step:
-                        on_step(AgentStep(self.name, round_num, "tool_call", f"{name}({result[:100]})"))
-                    if on_step:
-                        on_step(AgentStep(self.name, round_num, "done", result[:200]))
-                    log.info("└─ %s finished (done_tool)", self.name)
-                    return result
 
                 if on_step:
                     snippet = raw_args[:200] if name == "bash" else ""
