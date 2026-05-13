@@ -230,11 +230,9 @@ def get_system_prompt() -> dict:
         "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
         "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
         "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates.\n"
-        "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it to that agent. "
-        "For `create_doc`: first analyze reference documents yourself, then call the agent with ALL layout specs (colors, fonts, sizes, spacing, structure) and full text content. "
-        "CRITICAL: prepend the task with: 'FORBIDDEN: do NOT use fitz/python/bash to read any PDF file. Generate directly from specs.' "
-        "The sub-agent generates directly from your description — it does NOT re-analyze. "
-        "Never create documents directly with bash/Python yourself.\n"
+        "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it. "
+        "For `create_doc`: extract all text from any reference files yourself, then include layout specs AND full text content inline in the task — NO file paths. "
+        "The sub-agent generates directly from inline text only. Never create documents yourself with bash/Python.\n"
     )
     return {"role": "system", "content": content}
 
