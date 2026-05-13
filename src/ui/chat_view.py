@@ -108,9 +108,11 @@ async def handle_send():
         except asyncio.CancelledError:
             pass
 
+    if not state.current_session_id:
+        state.current_session_id = str(__import__("uuid").uuid4())
+
     if state.chat_title == "New Chat":
         state.chat_title = user_input[:40] + ("..." if len(user_input) > 40 else "")
-        refresh_sidebar()
 
     state.message_input.value = ""
     with state.chat_content:
@@ -119,6 +121,8 @@ async def handle_send():
             ui.markdown(user_input).classes("terminal-content")
 
     state.messages.append({"role": "user", "content": user_input})
+    db.save_session(state.current_session_id, state.chat_title, state.messages)
+    refresh_sidebar()
 
     with state.chat_content:
         thinking_container = ui.row().classes("items-center gap-2 text-gray-400 italic")
@@ -205,6 +209,7 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
         total_reasoning = ""
 
         response_container = None
+        _reasoning_active = False
 
         async for chunk in stream_chat(state.messages):
             if chunk["type"] == "status":
@@ -222,9 +227,14 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                     except: pass
                     thinking_indicator = None
                 total_reasoning += chunk["content"]
-                state.log_activity(f"[main] {chunk['content']}")
+                if _reasoning_active:
+                    state.log_activity(chunk["content"])
+                else:
+                    state.log_activity(f"[main] {chunk['content']}")
+                    _reasoning_active = True
 
             elif chunk["type"] == "tool":
+                _reasoning_active = False
                 response_container = None
                 if thinking_indicator:
                     try: thinking_indicator.delete()
