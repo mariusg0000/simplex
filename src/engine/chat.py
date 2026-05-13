@@ -123,7 +123,7 @@ def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             
     return final_sanitized
 
-async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str, str]]:
+async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> AsyncIterable[Dict[str, str]]:
     """
     WHAT:    Main AI loop: LLM streaming + multi-turn tool execution.
     WHY:     The highest-level engine — orchestrates the full conversation:
@@ -141,7 +141,8 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
                 ToolRegistry / SkillRegistry), appends results to messages,
                 and continues the while loop.
     PARAMS:  messages: List[Dict[str, str]] — the mutable chat history; new
-                       assistant + tool messages are appended in-place.
+                        assistant + tool messages are appended in-place.
+             max_rounds: int = 50 — max LLM+tool cycles before forced exit.
     RETURNS: AsyncIterable[Dict[str, str]] — event stream with types:
              "content", "reasoning", "tool", "status", "usage"
     ERRORS:  litellm exception → yields error status + content, then breaks
@@ -320,11 +321,19 @@ async def stream_chat(messages: List[Dict[str, str]]) -> AsyncIterable[Dict[str,
             elapsed = time.time() - t0
             result_summary = str(result)[:60]
             _debug(f"TOOL RESULT [{name}]: result_len={len(str(result))}, preview={result_summary}, elapsed={elapsed:.2f}s")
+            round_tag = f"\n\n[Round {round_num}/{max_rounds}]"
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],
                 "name": name,
-                "content": str(result)
+                "content": str(result) + round_tag
             })
             _debug(f"Appended tool response. messages count now: {len(messages)}")
             yield {"type": "status", "value": "tool_done", "content": f"Done: {name} ({elapsed:.1f}s)"}
+
+        if round_num >= max_rounds:
+            yield {"type": "status", "value": "error",
+                   "content": f"Max rounds ({max_rounds}) reached."}
+            yield {"type": "content",
+                   "content": f"\n\n**Max rounds ({max_rounds}) reached.** The main agent attempted {tool_count} tool calls. Consider asking the user how to proceed or re-invoking with a different strategy."}
+            break

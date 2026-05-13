@@ -222,7 +222,7 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                     except: pass
                     thinking_indicator = None
                 total_reasoning += chunk["content"]
-                state.log_activity(chunk["content"])
+                state.log_activity(f"[main] {chunk['content']}")
 
             elif chunk["type"] == "tool":
                 response_container = None
@@ -230,7 +230,7 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
-                state.log_activity(f"▸ tool: {chunk['content']}")
+                state.log_activity(f"[main] ▸ tool: {chunk['content']}")
 
             elif chunk["type"] == "content":
                 if thinking_indicator:

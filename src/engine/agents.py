@@ -694,11 +694,12 @@ class ToolCapableAgent:
                     log.info("└─ %s finished (_AGENT_DONE_)", self.name)
                     return done_result
 
+                round_tag = f"\n\n[Round {round_num}/{self.max_rounds}]"
                 self.messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "name": name,
-                    "content": result_str,
+                    "content": result_str + round_tag,
                 })
 
             if round_num == self.max_rounds and not gave_fallback:
@@ -713,7 +714,28 @@ class ToolCapableAgent:
             round_num += 1
 
         log.error("! %s exhausted all %d rounds", self.name, self.max_rounds)
-        msg = "Error: Max rounds reached without final response."
+
+        last_content = ""
+        for m in reversed(self.messages):
+            if m["role"] == "assistant" and m.get("content"):
+                last_content = m["content"][:300]
+                break
+
+        tool_counts: dict[str, int] = {}
+        for m in self.messages:
+            if m["role"] == "assistant" and m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    name = tc["function"]["name"]
+                    tool_counts[name] = tool_counts.get(name, 0) + 1
+
+        tool_summary = ", ".join(f"{k} x{v}" for k, v in tool_counts.items()) or "(none)"
+
+        report = (
+            f"[AGENT: {self.name}] Max rounds ({self.max_rounds}) reached. "
+            f"Tool calls made: {tool_summary}. "
+            f"Last response: {last_content or '(empty)'}. "
+            f"[Partial results may exist in the session folder.]"
+        )
         if on_step:
-            on_step(AgentStep(self.name, self.max_rounds, "error", msg))
-        return msg
+            on_step(AgentStep(self.name, self.max_rounds, "error", report))
+        return report

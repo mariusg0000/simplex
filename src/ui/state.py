@@ -85,7 +85,7 @@ def make_sub_agent_callback():
                     _console = ui.label("").classes(
                         "text-[11px] font-mono text-black leading-5 py-0.5 whitespace-pre-wrap"
                     )
-            _console.set_text((_console.text or "") + _collapse_newlines(chunk.content))
+            _console.set_text((_console.text or "") + _collapse_newlines(f"[{chunk.agent_name}] {chunk.content}"))
             _scroll_sub_agent()
 
     def _on_step(step: AgentStep):
@@ -108,9 +108,9 @@ def make_sub_agent_callback():
                     )
             text = ""
             if step.step_type == "tool_call":
-                text = f"$ {step.content[:500]}"
+                text = f"[{step.agent_name}] $ {step.content[:500]}"
             elif step.step_type == "tool_result":
-                text = step.content[:500]
+                text = f"[{step.agent_name}] {step.content[:500]}"
             if text:
                 _console.set_text((_console.text or "") + "\n" + _collapse_newlines(text))
                 _scroll_sub_agent()
