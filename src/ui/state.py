@@ -231,8 +231,8 @@ def get_system_prompt() -> dict:
         "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
         "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates.\n"
         "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it. "
-        "For `create_doc`: extract all text from any reference files yourself, then include layout specs AND full text content inline in the task — NO file paths. "
-        "The sub-agent generates directly from inline text only. Never create documents yourself with bash/Python.\n"
+        "For `create_doc`: INLINE mode (pass layout specs + text) or TEMPLATE mode (pass 'TEMPLATE: /path.pdf' + new text). "
+        "Never create documents yourself with bash/Python.\n"
     )
     return {"role": "system", "content": content}
 
