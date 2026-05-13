@@ -79,30 +79,33 @@ weasyprint — HTML to PDF (command-line):
   weasyprint input.html output.pdf
 
 pymupdf (fitz) — PDF read/manipulation:
-  # Write script to file (never use inline heredoc for complex scripts!)
+  # Write script to file, then run it
   cat > generate_pdf.py << 'PYEOF'
   import fitz, os
 
-  # Register TTF font from file
-  FONT_PATH = "/usr/share/fonts/truetype/lato/Lato-Regular.ttf"
   doc = fitz.open()
   page = doc.new_page()
-  font_idx = page.insert_font(fontfile=FONT_PATH)
+  # TTF font: just pass fontname + fontfile to insert_text (no insert_font needed!)
   page.insert_text(fitz.Point(50, 50), "Hello PDF",
-                   fontname=fitz.Font(fontfile=FONT_PATH).name,
-                   fontfile=FONT_PATH, fontsize=12)
+                   fontname="Lato-Regular",
+                   fontfile="/usr/share/fonts/truetype/lato/Lato-Regular.ttf",
+                   fontsize=12)
   doc.save("output.pdf")
   PYEOF
   python3 generate_pdf.py
+
+  # Measure text width with font.text_length(text, fontsize=N)
+  font_obj = fitz.Font(fontfile="/path/to/font.ttf")
+  width = font_obj.text_length("my text", fontsize=10)
 
 RULES:
 - Create ALL files (scripts, intermediates, output) EXCLUSIVELY inside the session folder
 - workdir in bash defaults to your session folder automatically — you don't need to specify it
 - You decide file names based on the task (no fixed naming convention)
 - Verify files after creation — run ls -la to confirm
-- CRITICAL: When using `cat > path << 'EOF'` to write a Python script, `path` MUST be a relative path (e.g., `cat > generate.py << 'EOF'`). NEVER use absolute paths like `/home/.../file.py` — the sandbox will block them and the command will fail. Use `python3 << 'EOF'` for inline execution instead.
-- Write clean Python code — use heredocs (<< 'PYEOF') for multi-line scripts
-- NEVER use inline `python3 << 'PYEOF'` for complex scripts (>10 lines). Write the script to a file first: `cat > script.py << 'PYEOF'` then run `python3 script.py`. Inline heredocs break on nested quotes, parentheses, and indented delimiters.
+- CRITICAL: When using `cat > path << 'EOF'` to create a Python script, `path` MUST be a RELATIVE path (e.g., `cat > generate.py << 'PYEOF'`). NEVER use an absolute path — the sandbox will block it.
+- NEVER use inline `python3 << 'PYEOF'` for any script longer than 3 lines. Inline heredocs ALWAYS break on nested quotes, parentheses, or indented delimiters. ALWAYS write the script to a .py file first, then run it with `python3 script.py`.
+- Use `fitz.Font(fontfile=path).text_length(text, fontsize=N)` to calculate text width for wrapping.
 - If an approach fails, try a different one
 - Do NOT read, modify, or create files outside the session folder
 - Read existing files with bash: cat <file> or python3 -c "print(open('...').read())"
