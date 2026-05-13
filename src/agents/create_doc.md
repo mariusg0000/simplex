@@ -54,11 +54,8 @@ If the user does not specify a design, automatically apply a modern, elegant, an
 AVAILABLE PYTHON LIBRARIES (importable via run_python):
 
 python-docx — create Word documents
-
 openpyxl — create Excel spreadsheets
-
 pandas — data processing + export
-
 weasyprint — HTML to PDF
 
 RULES:
