@@ -5,7 +5,7 @@ enabled
 Use this skill when the user asks to create a new document template, customize an existing one, add a new style, or generate a template from an existing document.
 
 ## skill_prompt
-You are now in TEMPLATE CREATION mode. Your task is to guide the user step by step to create a new `.md` template file in `src/templates/`. Template files are read by the `load_template` tool and used by PDF/doc creation sub-agents.
+You are now in TEMPLATE CREATION mode. Your task is to guide the user step by step to create a new `.md` template file in `~/.simplexai/templates/` (custom templates folder). Template files are read by the `load_template` tool and used by PDF/doc creation sub-agents. Custom templates override built-in ones when they share the same name.
 
 ### STRUCTURE OF A TEMPLATE `.md` FILE
 
@@ -34,8 +34,8 @@ Each template file must have these sections (use actual `##` headers in the file
    - Page size (default A4) and margins
 
 4. **Generate the `.md` file:**
-   - Write the complete template to `src/templates/<name>.md`
-   - Use `write_file` with the absolute path (e.g., `src/templates/invoice.md`)
+   - Write the complete template to `~/.simplexai/templates/<name>.md`
+   - Use `write_file` with the absolute path (e.g., `write_file("/home/marius/.simplexai/templates/invoice.md", content)`)
    - The template MUST use the sections above: Structură document, Typografie, Layout, Reguli
    - Use Romanian headings consistently
 
@@ -45,7 +45,8 @@ Each template file must have these sections (use actual `##` headers in the file
 
 ### RULES
 - Never generate a template without user input — ask first
+- Write ONLY to `~/.simplexai/templates/` — never modify `src/templates/` (those are built-in)
 - Use exact hex colors when the user specifies them; suggest readable defaults otherwise
 - Keep the template universal (format-agnostic) — no HTML, no format-specific code
 - Validate the template matches the project conventions before saving
-- Inform the user that the new template is available in `src/templates/` and ready to use
+- Inform the user that the new template is available at `~/.simplexai/templates/` and ready to use

@@ -1,15 +1,29 @@
 from pathlib import Path
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+BUILTIN_DIR = Path(__file__).resolve().parent.parent / "templates"
+CUSTOM_DIR = Path.home() / ".simplexai" / "templates"
+
+
+def _list_templates() -> str:
+    names: set[str] = set()
+    for d in [CUSTOM_DIR, BUILTIN_DIR]:
+        if d.is_dir():
+            for f in d.iterdir():
+                if f.suffix == ".md":
+                    names.add(f.stem)
+    if not names:
+        return "(none)"
+    return ", ".join(sorted(names))
 
 
 def get_description() -> dict:
+    available = _list_templates()
     return {
         "description": (
             "Load a document style template by name. Returns the full .md content "
             "with structure, typography, layout, and rules. "
-            "Use this at the start of PDF/doc creation to set the document style. "
-            "Available templates: invoice, report, letter, certificate, simple."
+            "Checks ~/.simplexai/templates/ first (custom), then built-in templates. "
+            f"Available: {available}."
         ),
         "parameters": {
             "type": "object",
@@ -19,7 +33,7 @@ def get_description() -> dict:
                     "description": (
                         "Template name (without .md extension). "
                         "Choose based on document type. "
-                        "Options: invoice, report, letter, certificate, simple."
+                        f"Options: {available}."
                     ),
                 },
             },
@@ -29,14 +43,20 @@ def get_description() -> dict:
 
 
 async def execute(name: str) -> str:
-    path = TEMPLATES_DIR / f"{name}.md"
-    if not path.exists():
-        return (
-            f"Error: Template '{name}' not found. "
-            f"Available: invoice, report, letter, certificate, simple."
-        )
-    if not path.is_file():
-        return f"Error: '{name}' is not a file."
+    if not name or "/" in name or ".." in name:
+        return f"Error: invalid template name '{name}'."
 
-    content = path.read_text(encoding="utf-8")
-    return content
+    paths = [
+        CUSTOM_DIR / f"{name}.md",
+        BUILTIN_DIR / f"{name}.md",
+    ]
+
+    for path in paths:
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+
+    available = _list_templates()
+    return (
+        f"Error: Template '{name}' not found in ~/.simplexai/templates/ "
+        f"or built-in templates. Available: {available}."
+    )
