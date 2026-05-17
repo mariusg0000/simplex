@@ -3,7 +3,7 @@ from pypdf import PdfReader
 from docx import Document
 import pandas as pd
 
-MAX_CHARS = 10000
+MAX_CHARS = 50000
 
 
 def _read_text(path: Path) -> str:

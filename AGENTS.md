@@ -79,48 +79,7 @@ ERRORS:  [failure modes]           (or "N/A")
 
 **Inline comments:** only at decision points; explain *why*, never narrate *what*.
 
-## 11. TASK TRACKING - MANDATORY
-
-### 11.1 Tool
-Use the built-in `todowrite` tool for all task management.
-
-### 11.2 New request detected when
-The user message introduces a goal unrelated to the current task, OR explicitly starts a new one, OR the previous top-level task is fully completed. If unsure, ask.
-
-### 11.3 Lifecycle (strict order)
-
-**A. On new request (before anything else):**
-1. Create a new top-level task with `todowrite`, decomposed into sub-tasks if multi-step.
-2. Call `todowrite` in the same turn as the plan proposal (per §5) — do not block.
-
-**B. During work:**
-- Flip status to `completed` immediately when each unit finishes. No batching.
-- Mid-request bugs → add sub-task `BUG_FIX: <desc>` under the active task; fix before closing.
-- Only ONE task `in_progress` at any time.
-
-**C. Archiving (triggered automatically when all sub-tasks are completed, or on user request via "archive task", or after a commit if not yet archived):**
-1. Verify top-level and all sub-tasks are `completed`.
-2. Ensure `task_archive/` directory exists (create if missing).
-3. Write `task_archive/YYYY-MM-DD_HHMM_<short_snake_case>.md` containing:
-   - Task title and sub-tasks (verbatim from `todowrite`).
-   - Brief summary of what was done and key decisions made.
-4. Confirm the archive file exists.
-5. Only then, mark the top-level task as `completed` in `todowrite`.
-
-Never confirm completion before the archive file write succeeds.
-
-### 11.4 Status values
-- `pending` — not started
-- `in_progress` — active (only one at a time)
-- `completed` — finished
-- `cancelled` — no longer relevant
-
-### 11.5 Invariants
-- `todowrite` is the single source of truth for active task state.
-- `task_archive/` is append-only history; never edit or delete archive files.
-- Each archive file = one completed request, task tree preserved verbatim.
-
-## 12. GIT BEST PRACTICES
+## 10. GIT BEST PRACTICES
 
 * **Structure:** Strict separation between the `Subject` line and `Body` using a blank line.
 * **Subject Line:** Write in the imperative mood and keep it under 50 characters (e.g., `Refactor payload validation logic`).

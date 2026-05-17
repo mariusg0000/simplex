@@ -1,8 +1,8 @@
 """
 src/tools/generate_pdf.py · Convert HTML to PDF with auto-termination on success.
 Takes a relative HTML filename, converts to PDF in the same session folder.
-On success: returns _AGENT_DONE_ with work_dir and PDF filename (auto-exits agent).
-On failure: returns errors/warnings for agent retry.
+On success: returns _AGENT_DONE_ with the PDF filename (auto-exits agent).
+On failure: returns error string so the agent can retry.
 Depends on: weasyprint (from scripts venv), pathlib, _agent_params (ContextVar).
 """
 
@@ -58,12 +58,12 @@ async def execute(filename: str, _agent_params: dict = None) -> str:
              from the tool — on success it exits; on failure it returns errors
              so the agent can fix and retry.
     HOW:     Resolves filename against work_dir. Uses weasyprint to convert.
-             On success returns _AGENT_DONE_ with JSON containing work_dir and
-             pdf_filename. On failure returns error details.
+             On success returns _AGENT_DONE_:<pdf_filename> to auto-terminate.
+             On failure returns a plain error string so the agent can retry.
     PARAMS:  filename: str — relative HTML filename
              _agent_params: dict — injected by ToolRegistry; carries work_dir
-    RETURNS: str — _AGENT_DONE_:{"work_dir": "...", "pdf": "..."} on success,
-                   or error/warning details on failure
+    RETURNS: str — _AGENT_DONE_:<pdf_filename> on success,
+                   or error string on failure
     """
     if not _agent_params or "work_dir" not in _agent_params:
         return "Error: generate_pdf requires a session folder (work_dir)."
@@ -93,4 +93,10 @@ async def execute(filename: str, _agent_params: dict = None) -> str:
         return f"Error converting {filename} to PDF: {e}"
 
     size = pdf_path.stat().st_size
-    return f"_AGENT_DONE_: {{\"work_dir\": \"{work_dir}\", \"pdf\": \"{pdf_filename}\", \"size\": {size}}}"
+    if size < 500:
+        return (
+            f"Error: generated PDF is only {size} bytes — likely empty or broken. "
+            f"Fix the HTML/CSS and retry."
+        )
+
+    return f"_AGENT_DONE_: {pdf_filename}"

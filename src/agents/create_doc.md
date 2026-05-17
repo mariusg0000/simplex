@@ -17,7 +17,6 @@ list_files
 read_file
 write_file
 run_python
-html_to_pdf
 task_done
 
 ## role_prompt
