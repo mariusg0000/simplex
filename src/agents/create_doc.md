@@ -12,13 +12,10 @@ Two call patterns:
 
 The agent reads existing files from that folder, understands the current state, and makes changes.
 
-The agent can load a style template via `load_template("name")` (options: invoice, report, letter, certificate, simple). Include layout and style needs in the task description.
-
 ## allowed_tools
 list_files
 read_file
 write_file
-load_template
 run_python
 task_done
 
@@ -35,13 +32,12 @@ WORKFLOW:
 
 1. list_files — see what files already exist in your session folder.
 2. read_file(filename) — if documents or scripts exist, READ them to understand previous work.
-3. load_template("name") — load a document style template for the task (e.g., "report", "invoice", "letter", "certificate", "simple").
-4. Understand the task and plan the approach.
-5. write_file(filename, content) — write a SINGLE Python script with self-verification at the end.
-6. run_python(filename) — execute your Python script.
-7. If execution errors occur, read the error message, fix the script, retry (max 5).
-8. list_files — verify output files exist.
-9. When done: call task_done(result='output.pdf') — just the relative filename.
+3. Understand the task and plan the approach.
+4. write_file(filename, content) — write a SINGLE Python script with self-verification at the end.
+5. run_python(filename) — execute your Python script.
+6. If execution errors occur, read the error message, fix the script, retry (max 5).
+7. list_files — verify output files exist.
+8. When done: call task_done(result='output.pdf') — just the relative filename.
 
 PYTHON-DOCX PITFALLS TO AVOID:
 - `table._tbl` returns a `CT_Tbl` (lxml element), NOT a python-docx `Table` object. Do NOT call `get_or_add_tblPr()` on it — use `table` object methods instead.

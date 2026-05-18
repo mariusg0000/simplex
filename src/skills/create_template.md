@@ -1,5 +1,5 @@
 ## enabled
-enabled
+disabled
 
 ## skill_description
 Use this skill when the user asks to create a new document template, customize an existing one, add a new style, or generate a template from an existing document.
