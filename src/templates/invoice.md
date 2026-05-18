@@ -32,3 +32,12 @@
 - Dacă tabelul depășește o pagină, repetă header-ul tabelului (thead)
 - Cota TVA implicită: 19% (dacă nu se specifică altfel)
 - Moneda implicită: RON (dacă nu se specifică altfel)
+
+## Compatibilitate Office (DOCX)
+- Font: Calibri (body) + Arial (tabel header). Evită Roboto/Open Sans.
+- Tabel produse: aplică stilul `Light Shading` din python-docx.
+- Header tabel: bold pe fundal #2C3E50 cu text alb.
+- Coloana Preț: format Excel `#,##0.00`; TVA/Total: `#,##0.00`.
+- Coloana Cantitate: număr întreg (`0`).
+- Data factură / scadență: format `YYYY-MM-DD`.
+- Utilizează `ws.freeze_panes = 'A2'` și auto-fit column widths.

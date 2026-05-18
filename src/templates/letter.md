@@ -37,3 +37,11 @@
 - Numerotează paginile "— X —" jos centrat (opțional, doar dacă >1 pagină)
 - Păstrează spațiul alb între secțiuni — nu compacta
 - Subiectul (Re:) se pune pe aceeași linie, nu pe linie separată
+
+## Compatibilitate Office (DOCX)
+- Font: Calibri (body 11pt). Antet/destinatar: Arial 10pt.
+- Bloc destinatar: stil `No Spacing` (linii compacte).
+- Corp scrisoare: stil `Normal` cu `space_after = Pt(12)`.
+- "Re:" — `Run` bold pe aceeași linie cu textul.
+- Semnătură: 3 paragrafe goale + nume bold + funcție italic.
+- Numerotare pagini: doar pentru documente >1 pagină, câmp `Page`.

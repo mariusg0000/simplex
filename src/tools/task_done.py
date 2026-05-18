@@ -59,6 +59,10 @@ async def execute(result: str, _agent_params: dict = None) -> str:
              File not found → plain error string (agent can retry)
     """
     if _agent_params and "work_dir" in _agent_params:
+        # Short-circuit: text results (spaces or >200 chars) bypass filesystem
+        if ' ' in result or len(result) > 200:
+            return f"_AGENT_DONE_: {result}"
+
         result_path = Path(result)
 
         if result_path.is_absolute():
@@ -79,8 +83,6 @@ async def execute(result: str, _agent_params: dict = None) -> str:
             )
 
         if not full_path.is_file():
-            if ' ' in result or len(result) > 200:
-                return f"_AGENT_DONE_: {result}"
             return (
                 f"Error: File not found at '{result}'. "
                 f"Verify the file was created successfully before calling task_done."

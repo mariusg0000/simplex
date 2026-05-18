@@ -33,3 +33,11 @@
 - Fără elemente decorative, fără chenare, fără linii orizontale
 - Păstrează documentul cât mai curat și minimal posibil
 - Header-ele sunt delimitate doar prin dimensiunea fontului și bold, fără linii sau fundaluri
+
+## Compatibilitate Office (DOCX)
+- Font: Calibri (body 11pt). Headere: Calibri Bold (titlu 18pt, secțiuni 13pt).
+- Stiluri native: `Normal` pentru body, titlu ca `Heading 1` (dacă există).
+- Fără tabele, fără borduri, fără fundaluri — doar text simplu.
+- Liste: `List Bullet` sau `List Number` style.
+- Spațiere: `space_after = Pt(6)` pe paragrafe.
+- Numerotare pagini: câmp `Page` jos centrat, doar dacă documentul >1 pagină.

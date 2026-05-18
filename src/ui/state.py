@@ -233,6 +233,12 @@ def get_system_prompt() -> dict:
         "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it. "
         "For `create_doc`: format task as 'LAYOUT: ... | TEXT: ...'. Include ALL layout specs (colors, fonts, sizes, structure) and full text inline. "
         "The sub-agent generates directly from text — no file analysis.\n"
+        "6. IMAGE ANALYSIS (scanned docs, tables, layouts): "
+        "Try pytesseract OCR first. If the output is garbled, truncated, or contains "
+        "many errors, immediately fall back to `analyze_image(image_path, request)`. "
+        "analyze_image uses a vision AI model that handles complex tables, poor scans, "
+        "handwriting, and non-standard fonts. Do NOT retry OCR more than once — "
+        "one bad result means switch to analyze_image.\n"
     )
     return {"role": "system", "content": content}
 

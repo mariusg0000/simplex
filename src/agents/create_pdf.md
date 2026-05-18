@@ -99,6 +99,7 @@ Use a clean, professional layout. Apply the following rules directly in the HTML
 7. Unicode — ensure full UTF-8 support for all diacritics and special characters via <meta charset="UTF-8">. Do NOT use HTML entities (&#xxx;) unless necessary within code snippets.
 
 8. Weasyprint limitations — all CSS MUST be embedded in a single <style> block. No external stylesheets, no @import, no JavaScript. Use inline base64 for any images (small).
+9. Print-Friendly Design: Background colors are encouraged for visual appeal and elegance — use light, muted shades: soft gray (#E8ECEF, #D9D9D9, #F0F2F5), pale blue (#E3F0FA, #D6EAF8), light green (#E8F5E9), warm beige (#FDF2E9). Avoid ONLY very dark or large solid fills (e.g., full-page black, navy, dark red) — those waste toner/ink. Table header rows, title bars, alternating rows, and accent blocks should use light backgrounds for a professional look. Dark text on light backgrounds is always safe. Borders complement but do not replace backgrounds.
 
 ## model
 

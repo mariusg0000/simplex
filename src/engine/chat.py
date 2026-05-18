@@ -151,8 +151,9 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
     round_num = 0
     total_assistant = 0
     import time
+    llm_model, llm_api_key, llm_api_base = settings.resolve_model()
     try:
-        mi = litellm.model_cost.get(settings.model, {})
+        mi = litellm.model_cost.get(llm_model, {})
         max_input_tokens = mi.get("max_input_tokens") or mi.get("max_tokens", 131072)
     except:
         max_input_tokens = 131072
@@ -164,7 +165,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
         tool_count = len([m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")])
         total_chars = sum(len(m.get("content", "") or "") for m in api_messages)
         try:
-            input_tokens = litellm.token_counter(model=settings.model, messages=api_messages)
+            input_tokens = litellm.token_counter(model=llm_model, messages=api_messages)
         except:
             input_tokens = total_chars // 4
         context_pct = (input_tokens / max_input_tokens * 100) if max_input_tokens else 0
@@ -193,13 +194,13 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         try:
             response = await litellm.acompletion(
-                model=settings.model,
+                model=llm_model,
                 messages=api_messages,
                 temperature=settings.temperature,
                 max_tokens=settings.max_tokens,
                 stream=True,
-                api_key=settings.openai_api_key,
-                api_base=settings.openai_api_base,
+                api_key=llm_api_key,
+                api_base=llm_api_base,
                 timeout=60,
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None
@@ -260,13 +261,13 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
         output_tokens = 0
         if full_content:
             try:
-                output_tokens = litellm.token_counter(model=settings.model, text=full_content)
+                output_tokens = litellm.token_counter(model=llm_model, text=full_content)
             except:
                 output_tokens = len(full_content) // 4
         if output_tokens > 0:
             try:
                 prompt_cost, completion_cost = litellm.cost_per_token(
-                    model=settings.model,
+                    model=llm_model,
                     prompt_tokens=input_tokens,
                     completion_tokens=output_tokens
                 )

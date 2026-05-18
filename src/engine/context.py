@@ -139,11 +139,12 @@ async def compress_with_llm(messages: List[Dict]) -> str:
     log.info("context: compressing %d messages (~%d chars) with LLM", len(messages), len(formatted))
 
     try:
+        llm_model, llm_api_key, llm_api_base = settings.resolve_model(settings.chat_model)
         response = await litellm.acompletion(
-            model=settings.model,
+            model=llm_model,
             messages=[{"role": "user", "content": prompt}],
-            api_key=settings.openai_api_key,
-            api_base=settings.openai_api_base,
+            api_key=llm_api_key,
+            api_base=llm_api_base,
             temperature=0.1,
             max_tokens=2048,
         )

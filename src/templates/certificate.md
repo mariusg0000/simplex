@@ -36,3 +36,11 @@
 - O SINGURĂ PAGINĂ — certificatul nu trebuie să se întindă pe mai multe pagini
 - Chenarul auriu (#C9A93C) este esențial pentru aspectul formal
 - Se evită culorile închise pe fundal (doar text, nu fundaluri pline)
+
+## Compatibilitate Office (DOCX)
+- Font: Times New Roman (ceremonial). Titlu: 28pt Bold. Corp: 13pt.
+- Chenar: tabel cu o celulă, bordură 3pt #C9A93C, padding 1cm.
+- Titlu "CERTIFICAT": centrat, `letter-spacing` aproximat cu spații între caractere.
+- Nume persoană: 18pt Bold #C9A93C (direct Run.color.rgb).
+- Linii semnătură: tabel 2 coloane cu `bottom_border`.
+- O singură pagină: setează `section.page_height = section.page_width` (landscape).

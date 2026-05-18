@@ -385,11 +385,13 @@ class SubAgent:
             {"role": "user", "content": task_input}
         ]
 
+        model_str = model_override or settings.chat_model
+        llm_model, llm_api_key, llm_api_base = settings.resolve_model(model_str)
         response = await litellm.acompletion(
-            model=model_override or settings.model,
+            model=llm_model,
             messages=messages,
-            api_key=settings.openai_api_key,
-            api_base=settings.openai_api_base,
+            api_key=llm_api_key,
+            api_base=llm_api_base,
             temperature=0.1
         )
 
@@ -464,10 +466,13 @@ class ToolCapableAgent:
 
     def _build_system_prompt(self) -> str:
         """
-        WHAT:    Assembles the final system prompt by appending CLI docs.
+        WHAT:    Assembles the final system prompt by appending CLI docs
+                 and accumulated experience from past sessions.
         WHY:     CLI-heavy agents (like create_doc) need explicit docs for
                  bash commands (weasyprint, python3 flags, etc.). These are
                  loaded from cli_prompts.toml and appended to the role prompt.
+                 Additionally, per-agent experience files (~/.simplexai/experience/*.md)
+                 are loaded so lessons from previous runs are available.
         PARAMS:  none (uses self.allowed_cli, self.role_prompt)
         RETURNS: str — combined system prompt
         """
@@ -475,9 +480,20 @@ class ToolCapableAgent:
         prompts = load_cli_prompts()
         cli_sections = [prompts[k] for k in self.allowed_cli if k in prompts]
         cli_part = "\n\n".join(cli_sections) if cli_sections else ""
+        prompt = self.role_prompt
         if cli_part:
-            return self.role_prompt + "\n\n" + cli_part
-        return self.role_prompt
+            prompt = self.role_prompt + "\n\n" + cli_part
+
+        # Append accumulated experience from previous sessions
+        try:
+            from src.engine.learning import load_experience
+            exp = load_experience(self.name)
+            if exp:
+                prompt += f"\n\n## ACCUMULATED EXPERIENCE\n\n{exp}"
+        except Exception as e:
+            log.warning("Failed to load experience for '%s': %s", self.name, e)
+
+        return prompt
 
     def _get_allowed_schemas(self) -> list[dict]:
         """
@@ -543,11 +559,13 @@ class ToolCapableAgent:
 
             response = None
             try:
+                model_str = model_override or settings.chat_model
+                llm_model, llm_api_key, llm_api_base = settings.resolve_model(model_str)
                 response = await litellm.acompletion(
-                    model=model_override or settings.model,
+                    model=llm_model,
                     messages=self.messages,
-                    api_key=settings.openai_api_key,
-                    api_base=settings.openai_api_base,
+                    api_key=llm_api_key,
+                    api_base=llm_api_base,
                     temperature=0.1,
                     tools=schemas if schemas else None,
                     tool_choice="auto" if schemas else None,
@@ -692,6 +710,16 @@ class ToolCapableAgent:
                     if on_step:
                         on_step(AgentStep(self.name, round_num, "done", done_result[:200]))
                     log.info("└─ %s finished (_AGENT_DONE_)", self.name)
+
+                    # Learning analysis: extract lessons from this session
+                    try:
+                        from src.engine.learning import analyze_and_learn
+                        log.info("Running learning analysis for '%s' (%d messages)",
+                                 self.name, len(self.messages))
+                        await analyze_and_learn(self.name, self.messages, done_result)
+                    except Exception as e:
+                        log.warning("Learning analysis failed for '%s': %s", self.name, e)
+
                     return done_result
 
                 remaining = self.max_rounds - round_num
@@ -744,4 +772,14 @@ class ToolCapableAgent:
         )
         if on_step:
             on_step(AgentStep(self.name, self.max_rounds, "error", report))
+
+        # Learning analysis even on failure — failures are the most valuable lessons
+        try:
+            from src.engine.learning import analyze_and_learn
+            log.info("Running learning analysis for '%s' on failure (%d messages)",
+                     self.name, len(self.messages))
+            await analyze_and_learn(self.name, self.messages, report)
+        except Exception as e:
+            log.warning("Learning analysis failed for '%s': %s", self.name, e)
+
         return report

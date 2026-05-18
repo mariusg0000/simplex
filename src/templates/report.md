@@ -37,3 +37,10 @@
 - Cuprinsul se generează doar la cerere explicită
 - Graficele/figurile se plasează între paragrafe, nu se rup pe pagini
 - Referințele bibliografice se formatează ca note de subsol
+
+## Compatibilitate Office (DOCX)
+- Font: Calibri (body 11pt). Headere: Calibri Bold (Heading 1: 18pt, Heading 2: 14pt, Heading 3: 12pt).
+- Folosește stilurile native `Heading 1`, `Heading 2`, `Heading 3` din python-docx — nu raw XML.
+- Cuprins: generabil din heading styles (Word automat).
+- Copertă: `PageBreak` înainte de pagina 2, `first_page` header gol.
+- Numerotare pagini: câmp `Page` / `SectionPages` în footer.
