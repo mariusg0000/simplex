@@ -235,10 +235,10 @@ def get_system_prompt() -> dict:
         "The sub-agent generates directly from text — no file analysis.\n"
         "6. IMAGE ANALYSIS (scanned docs, tables, layouts): "
         "Try pytesseract OCR first. If the output is garbled, truncated, or contains "
-        "many errors, immediately fall back to `analyze_image(image_path, request)`. "
-        "analyze_image uses a vision AI model that handles complex tables, poor scans, "
+        "many errors, immediately fall back to `use_vision(image_path, request)`. "
+        "use_vision uses a vision AI model that handles complex tables, poor scans, "
         "handwriting, and non-standard fonts. Do NOT retry OCR more than once — "
-        "one bad result means switch to analyze_image.\n"
+        "one bad result means switch to use_vision.\n"
     )
     return {"role": "system", "content": content}
 

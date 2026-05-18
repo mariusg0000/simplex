@@ -1,5 +1,5 @@
 """
-src/tools/analyze_image.py · Scale image → call vision model → return text.
+src/tools/use_vision.py · Scale image → call vision model → return text.
 Reads an image from an absolute path, scales to max long side (configurable),
 sends to the configured vision model with a detailed request, and returns
 the model's text response. Depends on: PIL, httpx, settings.vision_model.
@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-log = logging.getLogger("simplex.tools.analyze_image")
+log = logging.getLogger("simplex.tools.use_vision")
 
 
 def get_visibility() -> dict:
