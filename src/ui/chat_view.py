@@ -5,10 +5,12 @@ src/ui/chat_view.py · Chat logic · Message handling, streaming response displa
 import asyncio
 import sys
 from datetime import datetime
+from pathlib import Path
 from nicegui import ui
 from src.ui import state
 from src.ui.sidebar import refresh_sidebar
 from src.db import db
+from src.config import settings
 from src.engine.chat import stream_chat
 from src.engine.tools import registry
 from src.engine.agents import activity_callback, agent_stream_callback
@@ -31,6 +33,9 @@ async def start_new_chat():
         state.active_task.cancel()
 
     state.current_session_id = str(__import__("uuid").uuid4())
+    session_path = Path(settings.sessions_dir).expanduser() / state.current_session_id
+    session_path.mkdir(parents=True, exist_ok=True)
+    state.session_folder = str(session_path)
     state.chat_title = "New Chat"
     state.init_messages()
     state.chat_content.clear()
@@ -90,6 +95,9 @@ async def load_chat(session_id: str):
         return
 
     state.current_session_id = session_id
+    session_path = Path(settings.sessions_dir).expanduser() / session_id
+    session_path.mkdir(parents=True, exist_ok=True)
+    state.session_folder = str(session_path)
     state.chat_title = session["title"]
     state.messages = [state.get_system_prompt()] + session["messages"]
     await refresh_chat_display()
@@ -110,6 +118,9 @@ async def handle_send():
 
     if not state.current_session_id:
         state.current_session_id = str(__import__("uuid").uuid4())
+        session_path = Path(settings.sessions_dir).expanduser() / state.current_session_id
+        session_path.mkdir(parents=True, exist_ok=True)
+        state.session_folder = str(session_path)
 
     if state.chat_title == "New Chat":
         state.chat_title = user_input[:40] + ("..." if len(user_input) > 40 else "")

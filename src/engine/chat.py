@@ -17,6 +17,7 @@ from src.config import settings, logger
 from src.engine.tools import registry as tool_registry
 from src.engine.agents import agent_registry
 from src.engine.skills import skill_registry
+from src.ui import state
 
 log = logging.getLogger("simplex.engine.chat")
 
@@ -321,7 +322,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
             if name in tool_registry:
                 result = await tool_registry.call(name, args)
             elif name in agent_registry:
-                result = await agent_registry.call(name, args)
+                result = await agent_registry.call(name, args, session_folder=state.session_folder)
             else:
                 result = await skill_registry.call(name, args)
             elapsed = time.time() - t0

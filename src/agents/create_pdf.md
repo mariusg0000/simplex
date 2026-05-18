@@ -4,11 +4,7 @@ enabled
 ## agent_description
 You can delegate PDF creation to `create_pdf`. Strictly: write HTML → generate PDF → auto-exit. No retries, no iterations.
 
-Two call patterns:
-
-1. New PDF — pass task with layout description + text.
-2. Revision — pass work_dir from a previous session + updated task:
-   create_pdf(work_dir="/path/to/session/folder", task="Change the title to ...")
+All agents share the same chat session folder. Pass task with layout and content (or a content filename if written by the main agent). Revisions use the existing files in the shared folder.
 
 ## allowed_tools
 list_files
@@ -86,17 +82,3 @@ Use a clean, professional layout. Apply the following rules directly in the HTML
 9. Print-Friendly Design: Background colors are encouraged for visual appeal and elegance — use light, muted shades: soft gray (#E8ECEF, #D9D9D9, #F0F2F5), pale blue (#E3F0FA, #D6EAF8), light green (#E8F5E9), warm beige (#FDF2E9). Avoid ONLY very dark or large solid fills (e.g., full-page black, navy, dark red) — those waste toner/ink. Table header rows, title bars, alternating rows, and accent blocks should use light backgrounds for a professional look. Dark text on light backgrounds is always safe. Borders complement but do not replace backgrounds.
 
 ## model
-
-
-## execute_script
-import json, secrets, os
-from pathlib import Path
-
-base = Path(os.path.expanduser(os.getenv("SIMPLEXAI_TMP_DIR", "~/.simplexai/tmp")))
-docs_dir = base / "docs"
-docs_dir.mkdir(parents=True, exist_ok=True)
-session_id = secrets.token_hex(8)
-work_dir = docs_dir / session_id
-work_dir.mkdir(parents=True, exist_ok=True)
-
-print(json.dumps({"work_dir": str(work_dir)}))

@@ -127,6 +127,7 @@ def _scroll_sub_agent():
         pass
 chat_title: str = "New Chat"
 current_session_id: str = ""
+session_folder: str = ""
 status_label: Any = None
 usage_label: Any = None
 
@@ -224,6 +225,13 @@ def get_system_prompt() -> dict:
         f"  - .tmp/     -> temporary/intermediate files (auto-cleaned after 30 min)\n"
         f"  - scripts/  -> reusable Python scripts (see catalog below)\n"
     )
+    if session_folder:
+        content += (
+            f"  - sessions/ -> current session workspace\n"
+            f"                 {session_folder}/\n"
+            f"    All temporary files (content, scripts, generated documents) for this chat go here.\n"
+            f"    Sub-agents work ONLY inside this folder.\n"
+        )
     content += (
         "\nSTRATEGIC GUIDELINES:\n"
         "1. BE EFFICIENT: Do not perform more than 2 search attempts for the same request.\n"
@@ -231,9 +239,11 @@ def get_system_prompt() -> dict:
         "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
         "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates.\n"
         "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it. "
-        "For `create_doc`: ALWAYS write the full content to a file first using write_file (use a path like ~/.simplexai/tmp/content_<timestamp>.txt), "
-        "then call `create_doc(task=\"Read /path/to/content.txt and create [document type]. Layout: [specs]\")`. "
-        "Include layout specs (colors, fonts, sizes, structure) in the task. The agent reads the file with read_file.\n"
+        "For `create_doc`: ALWAYS write the full content to a file first using write_file "
+        "(use a relative filename like 'content.txt'), "
+        "then call `create_doc(task=\"Read content.txt and create [document type]. Layout: [specs]\")`. "
+        "The file is in the shared session folder, so the sub-agent can read it. "
+        "Include layout specs (colors, fonts, sizes, structure) in the task.\n"
         "6. IMAGE ANALYSIS (scanned docs, tables, layouts): "
         "Try pytesseract OCR first. If the output is garbled, truncated, or contains "
         "many errors, immediately fall back to `use_vision(image_path, request)`. "

@@ -43,6 +43,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("simplex_tmp_dir", "tmp_dir")
     )
 
+    sessions_dir: str = Field(
+        default="~/.simplexai/sessions",
+        validation_alias=AliasChoices("simplex_sessions_dir", "sessions_dir")
+    )
+
     temperature: float = Field(default=0.7, validation_alias=AliasChoices("simplex_temperature", "temperature"))
     max_tokens: int = Field(default=4096, validation_alias=AliasChoices("simplex_max_tokens", "max_tokens"))
 

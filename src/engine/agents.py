@@ -35,8 +35,7 @@ class AgentDef:
              enabled: bool — parsed from ## enabled
              description: str — LLM-facing summary from ## agent_description
              allowed_tools: list[str] — tool names the agent may call
-             role_prompt: str — system prompt from ## role_prompt (may contain {work_dir})
-             execute_script: str — Python code that creates a session folder (optional)
+             role_prompt: str — system prompt from ## role_prompt
              done_tool: str — tool name that signals completion (default "task_done")
              model: str — model override for this agent (empty = use default)
     """
@@ -45,7 +44,6 @@ class AgentDef:
     description: str
     allowed_tools: list[str]
     role_prompt: str
-    execute_script: str = ""
     done_tool: str = "task_done"
     model: str = ""
 
@@ -134,7 +132,6 @@ class AgentRegistry:
                     if line.strip()
                 ]
                 role_prompt = sections["role_prompt"].strip()
-                execute_script = sections.get("execute_script", "").strip()
                 done_tool_raw = sections.get("done_tool", "").strip()
                 done_tool = done_tool_raw if done_tool_raw else "task_done"
                 model_raw = sections.get("model", "").strip()
@@ -145,15 +142,13 @@ class AgentRegistry:
                     description=description,
                     allowed_tools=allowed_tools,
                     role_prompt=role_prompt,
-                    execute_script=execute_script,
                     done_tool=done_tool,
                     model=model_raw,
                 )
 
                 self._agents[name] = agent_def
-                log.info("Loaded agent '%s' from %s (tools=%s, done='%s', has_exec=%s, model='%s')",
+                log.info("Loaded agent '%s' from %s (tools=%s, done='%s', model='%s')",
                          name, source_label, allowed_tools, done_tool,
-                         "yes" if execute_script else "no",
                          model_raw if model_raw else "default")
             except Exception as e:
                 log.error(f"Failed to load agent {filepath.name}: {e}")
@@ -169,29 +164,14 @@ class AgentRegistry:
         """
         WHAT:    Builds OpenAI function-calling schemas for all enabled agents.
         WHY:     The main agent's LLM sees these as callable functions; selecting
-                 one triggers agent_registry.call(). The work_dir parameter is
-                 conditionally exposed for agents with execute_script (workspace reuse).
+                 one triggers agent_registry.call(). All agents share the current
+                 chat session folder — no work_dir parameter needed.
         PARAMS:  none (uses self._agents, self._disabled)
         RETURNS: list[dict] — OpenAI tool schemas, one per enabled agent
         """
         schemas = []
         for name, agent in self._agents.items():
             if agent.enabled and name not in self._disabled:
-                properties = {
-                    "task": {
-                        "type": "string",
-                        "description": f"Task for the {name} agent. Describe what you need in detail."
-                    },
-                }
-                if agent.execute_script:
-                    properties["work_dir"] = {
-                        "type": "string",
-                        "description": (
-                            "Existing session folder to reuse. When provided, the agent "
-                            "continues working in this folder instead of creating a new one. "
-                            "Use this for revisions or corrections to existing work."
-                        ),
-                    }
                 schemas.append({
                     "type": "function",
                     "function": {
@@ -199,30 +179,35 @@ class AgentRegistry:
                         "description": agent.description,
                         "parameters": {
                             "type": "object",
-                            "properties": properties,
+                            "properties": {
+                                "task": {
+                                    "type": "string",
+                                    "description": f"Task for the {name} agent. Describe what you need in detail."
+                                },
+                            },
                             "required": ["task"],
                         },
                     },
                 })
         return schemas
 
-    async def call(self, name: str, arguments: dict) -> str:
+    async def call(self, name: str, arguments: dict, session_folder: str = "") -> str:
         """
         WHAT:    Invokes a registered agent by name with the given arguments.
-        WHY:     Entry point called by the main agent's tool loop. Handles session
-                 setup (new or reused), {work_dir} placeholder resolution, sandbox
-                 context injection, and result enrichment with session folder info.
-        HOW:     1. Resolves work_dir: runs execute_script (new) or reuses existing folder.
-                2. Sets agent_params_ctx so bash tool enforces sandbox.
-                3. Replaces {work_dir} in the role prompt with the actual path.
-                4. Creates a ToolCapableAgent and runs the task with streaming.
-                5. Appends [Session folder: ...] to the result for caller reuse.
+        WHY:     Entry point called by the main agent's tool loop. All agents
+                 share the current chat session folder for workspace, eliminating
+                 per-agent execute_script. Revisions use explicit work_dir.
+        HOW:     1. Resolves work_dir: explicit work_dir arg or shared session_folder.
+                 2. Sets agent_params_ctx so tools enforce sandbox.
+                 3. Replaces {work_dir} in the role prompt with the actual path.
+                 4. Creates a ToolCapableAgent and runs the task with streaming.
+                 5. Appends [Session folder: ...] to the result for caller reuse.
         PARAMS:  name: str — agent filename stem (e.g. "create_doc")
-                 arguments: dict — must contain "task", may contain "work_dir"
+                 arguments: dict — must contain "task"
+                 session_folder: str — absolute path to the shared session folder
         RETURNS: str — the agent's final output (typically a file path or summary)
         ERRORS:  Agent not found → "Error: Agent '...' not found."
-                 work_dir invalid → "Error: Specified work_dir ... does not exist"
-                 execute_script fails → "Error: Failed to initialize agent workspace: ..."
+                 No session folder → "Error: No session folder available."
         """
         agent = self._agents.get(name)
         if not agent:
@@ -232,61 +217,31 @@ class AgentRegistry:
         log.info("=== Agent '%s' called ===", name)
         log.info("task (first 300): %s", task[:300])
 
-        dynamic_context = ""
-        token = None
-        params_dict = None
-        resolved_prompt = agent.role_prompt
-
-        if agent.execute_script:
-            reuse_work_dir = arguments.get("work_dir")
-
-            if reuse_work_dir:
-                reuse_path = Path(reuse_work_dir).resolve()
-                if not reuse_path.is_dir():
-                    return (
-                        f"Error: Specified work_dir '{reuse_work_dir}' does not exist "
-                        f"or is not a directory."
-                    )
-                params_dict = {"work_dir": str(reuse_path)}
-                token = agent_params_ctx.set(params_dict)
-                dynamic_context = (
-                    f"SANDBOX: {reuse_path}\n"
-                    f"All work happens HERE and ONLY HERE. Scripts, temp files, final document — "
-                    f"everything must be created inside this directory. No exceptions. "
-                    f"The bash tool enforces this."
+        work_dir = session_folder
+        reuse_work_dir = arguments.get("work_dir")
+        if reuse_work_dir:
+            reuse_path = Path(reuse_work_dir).resolve()
+            if not reuse_path.is_dir():
+                return (
+                    f"Error: Specified work_dir '{reuse_work_dir}' does not exist "
+                    f"or is not a directory."
                 )
-                log.info("✓ reusing existing work_dir: %s", reuse_path)
-            else:
-                log.info("▶ running execute_script for '%s'", name)
-                try:
-                    proc = await asyncio.create_subprocess_exec(
-                        "python3", "-c", agent.execute_script,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    stdout, stderr = await proc.communicate()
-                    if proc.returncode == 0 and stdout:
-                        output = stdout.decode().strip()
-                        log.info("✓ execute_script output: %s", output)
-                        params_dict = json.loads(output)
-                        token = agent_params_ctx.set(params_dict)
-                        wd = params_dict.get("work_dir", "")
-                        dynamic_context = (
-                            f"SANDBOX: {wd}\n"
-                            f"All work happens HERE and ONLY HERE. Scripts, temp files, final document — "
-                            f"everything must be created inside this directory. No exceptions. "
-                            f"The bash tool enforces this."
-                        )
-                    else:
-                        err_msg = stderr.decode().strip() or f"exit code {proc.returncode}"
-                        log.error("✗ execute_script for '%s' failed: %s", name, err_msg)
-                        return f"Error: Failed to initialize agent workspace: {err_msg}"
-                except Exception as e:
-                    log.error("✗ execute_script for '%s' error: %s", name, e)
-                    return f"Error: Failed to initialize agent workspace: {e}"
+            work_dir = str(reuse_path)
+            log.info("✓ reusing existing work_dir: %s", work_dir)
 
-            if params_dict and "work_dir" in params_dict:
-                resolved_prompt = agent.role_prompt.replace("{work_dir}", params_dict["work_dir"])
+        if not work_dir:
+            return f"Error: No session folder available. Cannot run agent '{name}'."
+
+        params_dict = {"work_dir": work_dir}
+        token = agent_params_ctx.set(params_dict)
+
+        dynamic_context = (
+            f"SANDBOX: {work_dir}\n"
+            f"All work happens HERE and ONLY HERE. Scripts, temp files, final document — "
+            f"everything must be created inside this directory. No exceptions. "
+        )
+
+        resolved_prompt = agent.role_prompt.replace("{work_dir}", work_dir)
 
         tc_agent = ToolCapableAgent(
             name=name,
@@ -310,16 +265,13 @@ class AgentRegistry:
             log.info("result: %s", result[:500])
 
             # Enrich result with session folder info so caller can reuse it
-            if params_dict and "work_dir" in params_dict:
-                wd = params_dict["work_dir"]
-                session_tag = f"[Session folder: {wd}]"
-                if session_tag not in result:
-                    result = f"{result}\n{session_tag}"
+            session_tag = f"[Session folder: {work_dir}]"
+            if session_tag not in result:
+                result = f"{result}\n{session_tag}"
 
             return result
         finally:
-            if token is not None:
-                agent_params_ctx.reset(token)
+            agent_params_ctx.reset(token)
 
     def disable(self, name: str):
         self._disabled.add(name)
