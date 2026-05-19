@@ -307,9 +307,28 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
             raw_args = tc["function"]["arguments"]
             try:
                 args = json.loads(raw_args)
-            except json.JSONDecodeError:
-                log.warning("! JSON decode error for tool '%s': %s", name, raw_args[:100])
-                args = {}
+            except json.JSONDecodeError as e:
+                log.warning("! JSON decode error for tool '%s': %s (pos=%s)", name, raw_args[:200], e.pos)
+                error_msg = (
+                    f"Error: Tool arguments are not valid JSON (position {e.pos}). "
+                    f"String values may contain unescaped quotes or backslashes. "
+                    f"Put document content in files and pass filenames, not inline text."
+                )
+                yield {"type": "tool", "content": f"⚠ {error_msg}"}
+                remaining = max_rounds - round_num
+                round_tag = f"\n\n[Round {round_num}/{max_rounds}"
+                if remaining <= 3:
+                    round_tag += " 🛑 CRITICAL — finish now!"
+                elif remaining <= 6:
+                    round_tag += f" ⚠️ only {remaining} left"
+                round_tag += "]"
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "name": name,
+                    "content": error_msg + round_tag,
+                })
+                continue
             
             cmd_snippet = ""
             if "command" in args:

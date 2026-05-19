@@ -668,9 +668,29 @@ class ToolCapableAgent:
 
                 try:
                     args = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    log.warning("! JSON decode error for tool '%s': %s", name, raw_args[:100])
-                    args = {}
+                except json.JSONDecodeError as e:
+                    remaining = self.max_rounds - round_num
+                    error_msg = (
+                        f"Error: Tool arguments are not valid JSON (position {e.pos}). "
+                        f"String values may contain unescaped quotes or backslashes. "
+                        f"Put document content in files and pass filenames, not inline text."
+                    )
+                    round_tag = f"\n\n[Round {round_num}/{self.max_rounds}"
+                    if remaining <= 3:
+                        round_tag += " 🛑 CRITICAL — finish now!"
+                    elif remaining <= 6:
+                        round_tag += f" ⚠️ only {remaining} left"
+                    round_tag += "]"
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "name": name,
+                        "content": error_msg + round_tag,
+                    })
+                    if on_step:
+                        on_step(AgentStep(self.name, round_num, "tool_result", error_msg[:200]))
+                    log.warning("! JSON decode error for tool '%s': %s (pos=%s)", name, raw_args[:200], e.pos)
+                    continue
 
                 log.info("│   %s → calling %s(args=%s)", self.name, name, args)
                 result = await registry.call(name, args)
