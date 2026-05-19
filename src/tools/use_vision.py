@@ -1,13 +1,15 @@
 """
-src/tools/use_vision.py · Scale image → call vision model → return text.
-Reads an image from an absolute path, scales to max long side (configurable),
-sends to the configured vision model with a detailed request, and returns
-the model's text response. Depends on: PIL, httpx, settings.vision_model.
+src/tools/use_vision.py · Scale image → call vision model → write detail file.
+Reads an image, scales it, sends to the configured vision model, returns a short
+summary inline and writes the full analysis to a file in the session folder.
+Depends on: PIL, httpx, settings.vision_model, _agent_params (work_dir).
 """
 
 import base64
 import io
+import json
 import logging
+import uuid
 from pathlib import Path
 
 import httpx
@@ -27,8 +29,8 @@ def get_description() -> dict:
             "Use this when tesseract/pytesseract OCR fails or produces poor results — "
             "handles complex layouts, tables, handwriting, poor-quality scans, and "
             "non-standard fonts. Fall back to this after one failed OCR attempt. "
-            "Scale to max 2000px, encode as base64, send to vision model. "
-            "Returns descriptive text response."
+            "Returns a short summary inline and writes the full analysis to a .md "
+            "file in the session folder."
         ),
         "parameters": {
             "type": "object",
@@ -54,20 +56,23 @@ def get_description() -> dict:
     }
 
 
-async def execute(image_path: str, request: str) -> str:
+async def execute(image_path: str, request: str, _agent_params: dict = None) -> str:
     """
-    WHAT:    Reads an image, scales it, encodes as base64, and calls the vision API.
-    WHY:     The vision agent needs a single tool that handles the full pipeline —
-             reading, scaling, encoding, and API call — without exposing API keys
-             to the agent sandbox.
-    HOW:     1. Opens image with PIL. 2. Scales proportionally if long side >
-             vision_max_dimension. 3. Saves as JPEG → base64. 4. Resolves the vision
-             model via settings. 5. POSTs to OpenAI-compatible vision endpoint.
-             6. Returns the model's text content.
+    WHAT:    Reads an image, calls the vision API, returns short summary inline
+             and writes full analysis to a file in the session folder.
+    WHY:     The vision tool needs to keep the main agent's context lean — only a
+             short summary flows back; the full detailed analysis persists on disk
+             in the session folder for later reference.
+    HOW:     1. Opens image with PIL, scales if needed, encodes as base64 JPEG.
+             2. Sends to the configured vision model with a JSON-format system prompt.
+             3. Parses the JSON response for short_description and full_description.
+             4. Writes full_description to a .md file in the session folder (work_dir).
+             5. Returns short_description + file path to the caller.
     PARAMS:  image_path: str — absolute path to the image file
              request: str — detailed analysis prompt for the vision model
-    RETURNS: str — model's text response, or error description
-    ERRORS:  File not found, PIL open failure, API failure, empty response
+             _agent_params: dict or None — injected by ToolRegistry; carries work_dir
+    RETURNS: str — short_description + [DETAIL: filename.md], or error string
+    ERRORS:  File not found, PIL open failure, API failure, JSON parse failure
     """
     if not image_path or not request:
         return (
@@ -79,6 +84,18 @@ async def execute(image_path: str, request: str) -> str:
         return f"Error: image file not found: {image_path}"
     if not target.is_file():
         return f"Error: not a file: {image_path}"
+
+    if _agent_params and "work_dir" in _agent_params:
+        work_dir = _agent_params["work_dir"]
+    else:
+        from src.ui import state
+        if state.session_folder:
+            work_dir = state.session_folder
+        else:
+            return (
+                "Error: use_vision requires a session folder to write the detail file. "
+                "No session folder is set."
+            )
 
     try:
         img = Image.open(target)
@@ -123,18 +140,23 @@ async def execute(image_path: str, request: str) -> str:
 
     SYSTEM = (
         "You are a precise document analyst. "
-        "When analyzing an image of a document, ALWAYS include in your response:\n"
-        "1. PAGE ORIENTATION — explicitly state \"Portrait\" or \"Landscape\"\n"
-        "2. LAYOUT STRUCTURE — sections, columns, margins, headers, footers\n"
-        "3. KEY ELEMENTS — tables, images, logos, stamps, signatures, seals\n"
-        "4. TABLES — for each: row/column count, headers, content, merged cells\n"
-        "5. TEXT — extract verbatim where readable; note font style/size/weight/color\n"
-        "6. COLORS — background, text, accents, highlights\n"
-         "7. NUMBERS & CODES — extract all numeric values, dates, registration numbers exactly\n"
-         "8. CONTENT vs PAGE ORIENTATION — the physical page image may be Portrait while the "
-         "text/content is rotated (Landscape). Check if text runs across the short side or reads "
-         "vertically. Report BOTH: \"Physical page: Portrait, Content orientation: Landscape (rotated 90°)\".\n\n"
-        "Be exhaustive and specific. Do not summarize — describe everything you see."
+        "Return ONLY a valid JSON object with exactly two keys:\n"
+        "- short_description: 1-2 sentences summarising what the document IS and its key data "
+        "(e.g. \"Romanian invoice from SC Example SRL dated 15.03.2024 — total 1,250 RON, "
+        "3 line items\"). Do NOT include meta-commentary like \"The document appears to be...\". "
+        "State facts directly.\n"
+        "- full_description: exhaustive analysis including: page orientation (Portrait/Landscape "
+        "and content rotation if any), layout structure (sections, columns, margins, headers, "
+        "footers), key elements (tables, images, logos, stamps, signatures, seals), tables "
+        "(row/col counts, headers, content, merged cells), text extracted verbatim with font "
+        "style/size/weight/color where readable, background/text/accent colours, all numeric "
+        "values, dates, registration numbers, codes extracted exactly. Be exhaustive — "
+        "describe everything you see.\n\n"
+        "Example format:\n"
+        "{\n"
+        '  "short_description": "Invoice from SC Example SRL dated 15.03.2024 — total 1,250 RON, 3 items.",\n'
+        '  "full_description": "PAGE ORIENTATION: Portrait\\nLAYOUT: ...\\nTABLES: ...\\nTEXT: ..."\n'
+        "}\n"
     )
 
     payload = {
@@ -177,4 +199,37 @@ async def execute(image_path: str, request: str) -> str:
     if not text or not text.strip():
         return "Error: vision model returned an empty response."
 
-    return text.strip()
+    # Parse JSON response, fallback to plain text
+    try:
+        parsed = json.loads(text)
+        short = parsed.get("short_description", "").strip()
+        full = parsed.get("full_description", "").strip()
+    except (json.JSONDecodeError, TypeError):
+        short = ""
+        full = text.strip()
+
+    if not short:
+        # Fallback: derive summary from first ~2 sentences
+        sentences = full.replace("\n", " ").split(". ")
+        short = ". ".join(sentences[:2]).strip()
+        if short:
+            short += "."
+        else:
+            short = full[:200].rsplit(" ", 1)[0] + "..."
+
+    if not full:
+        full = "(empty analysis)"
+
+    # Write full description to a file in the session folder
+    work_dir = Path(work_dir)
+    stem = target.stem
+    suffix = uuid.uuid4().hex[:8]
+    detail_filename = f"{stem}.{suffix}.md"
+    detail_path = work_dir / detail_filename
+
+    try:
+        detail_path.write_text(full, encoding="utf-8")
+    except Exception as e:
+        return f"Error: failed to write detail file '{detail_filename}': {e}"
+
+    return f"{short}\n[DETAIL: {detail_filename}]"
