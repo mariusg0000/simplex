@@ -228,10 +228,8 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
     state.status_label.set_text("Connecting...")
     try:
         total_response = ""
-        total_reasoning = ""
 
         response_container = None
-        _reasoning_active = False
         _assistant_before = sum(1 for m in state.messages if m.get("role") == "assistant")
 
         async for chunk in stream_chat(state.messages):
@@ -244,20 +242,7 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                 cost = chunk.get("cost", 0.0)
                 state.usage_label.set_text(f"Context: {ctx:.1f}k - {pct:.1f}% | Cost: ${cost:.4f}")
 
-            elif chunk["type"] == "reasoning":
-                if thinking_indicator:
-                    try: thinking_indicator.delete()
-                    except: pass
-                    thinking_indicator = None
-                total_reasoning += chunk["content"]
-                if _reasoning_active:
-                    state.log_activity(chunk["content"])
-                else:
-                    state.log_activity(f"[main] {chunk['content']}")
-                    _reasoning_active = True
-
             elif chunk["type"] == "tool":
-                _reasoning_active = False
                 response_container = None
                 if thinking_indicator:
                     try: thinking_indicator.delete()
@@ -303,7 +288,6 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
             state.messages.append({
                 "role": "assistant",
                 "content": total_response or None,
-                "reasoning_content": total_reasoning or None
             })
 
         # Context compression: if context exceeds max_context, compress old messages
@@ -322,18 +306,17 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
     except asyncio.CancelledError:
         _debug("=== _process_response CANCELLED ===")
         # Save partial response before raising
-        if total_response or total_reasoning:
+        if total_response:
             _assistant_after = sum(1 for m in state.messages if m.get("role") == "assistant")
             if _assistant_after == _assistant_before:
                 state.messages.append({
                     "role": "assistant",
                     "content": total_response or None,
-                    "reasoning_content": total_reasoning or None
                 })
             compressed = await compress_messages(state.messages)
             if compressed is not state.messages:
                 state.messages = compressed
-            _debug(f"Saving partial response on cancel ({len(total_response)} content, {len(total_reasoning)} reasoning chars)")
+            _debug(f"Saving partial response on cancel ({len(total_response)} chars)")
             db.save_session(state.current_session_id, state.chat_title, state.messages)
             refresh_sidebar()
         state.status_label.set_text("Cancelled")

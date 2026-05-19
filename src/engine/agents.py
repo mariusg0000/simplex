@@ -340,10 +340,10 @@ activity_callback: ContextVar[Optional[Callable[[AgentStep], None]]] = (
 
 @dataclass
 class AgentStreamChunk:
-    """A chunk of streaming LLM output (reasoning or content) for live display."""
+    """A chunk of streaming LLM output for live display."""
     agent_name: str
     round: int
-    chunk_type: str  # "reasoning" or "content"
+    chunk_type: str  # "content"
     content: str
     timestamp: str = ""
 
@@ -506,8 +506,8 @@ class ToolCapableAgent:
         WHY:     Sub-agents need an autonomous loop without main-agent involvement.
                  The LLM decides when it's done (no tool calls or _AGENT_DONE_).
         HOW:     Per round:
-                 1. Calls litellm.acompletion with streaming + tool schemas.
-                 2. Consumes the stream: reasoning/content chunks + coalesced emit.
+                 1. Calls litellm.acompletion with streaming.
+                 2. Consumes the stream: content chunks + coalesced emit.
                  3. If no tool calls → agent is done, returns content.
                  4. Otherwise executes each tool call via registry.call().
                  5. _AGENT_DONE_ prefix → auto-terminate with the result.
@@ -563,28 +563,21 @@ class ToolCapableAgent:
                     on_step(AgentStep(self.name, round_num, "error", str(e)))
                 return f"Error: {str(e)}"
 
-            full_reasoning = ""
             full_content = ""
-            buf = {"reasoning": "", "content": ""}
+            buf = {"content": ""}
             last_emit = 0.0
             try:
                 async for chunk in response:
                     delta = chunk.choices[0].delta
 
-                    r = getattr(delta, "reasoning_content", None)
-                    if r:
-                        full_reasoning += r
-                        buf["reasoning"] += r
                     if delta.content:
                         full_content += delta.content
                         buf["content"] += delta.content
                     now = time.monotonic()
-                    if (buf["reasoning"] or buf["content"]) and (now - last_emit) >= self._COALESCE_SEC:
+                    if buf["content"] and (now - last_emit) >= self._COALESCE_SEC:
                         if on_stream:
-                            for ct in ("reasoning", "content"):
-                                if buf[ct]:
-                                    on_stream(AgentStreamChunk(self.name, round_num, ct, buf[ct]))
-                                    buf[ct] = ""
+                            on_stream(AgentStreamChunk(self.name, round_num, "content", buf["content"]))
+                            buf["content"] = ""
                         last_emit = now
 
             except asyncio.CancelledError:
@@ -599,19 +592,17 @@ class ToolCapableAgent:
                 return f"Error: Streaming failed: {e}"
 
             if on_stream:
-                for ct in ("reasoning", "content"):
-                    if buf[ct]:
-                        on_stream(AgentStreamChunk(self.name, round_num, ct, buf[ct]))
-
-            reasoning = full_reasoning or ""
+                buf_content = buf.get("content", "")
+                if buf_content:
+                    on_stream(AgentStreamChunk(self.name, round_num, "content", buf_content))
 
             schemas = self._get_allowed_schemas()
             _known_tools = {s["function"]["name"] for s in schemas}
 
             tool_blocks = extract_tool_blocks(full_content, _known_tools)
             has_tool_calls = bool(tool_blocks)
-            log.info("│ %s round %d: reasoning=%d chars, content=%d chars, tool_calls=%d",
-                     self.name, round_num, len(full_reasoning), len(full_content), len(tool_blocks))
+            log.info("│ %s round %d: content=%d chars, tool_calls=%d",
+                     self.name, round_num, len(full_content), len(tool_blocks))
 
             if not has_tool_calls:
                 output = full_content or ""
@@ -622,13 +613,9 @@ class ToolCapableAgent:
 
             safe_content = strip_tool_blocks(full_content, _known_tools)
             assistant_msg = {"role": "assistant", "content": safe_content or None}
-            if reasoning:
-                assistant_msg["reasoning_content"] = reasoning
             self.messages.append(assistant_msg)
 
             log.info("│ %s round %d: %d tool call(s)", self.name, round_num, len(tool_blocks))
-            if reasoning:
-                log.info("│ reasoning: %s...", reasoning[:200])
 
             for block in tool_blocks[:1]:  # Single tool per round
                 name = block["name"]

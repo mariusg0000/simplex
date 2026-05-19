@@ -73,7 +73,7 @@ def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     PARAMS:  messages: List[Dict[str, Any]] — The raw chat history.
     RETURNS: List[Dict[str, Any]] — A sanitized copy ready for the LLM.
     """
-    allowed_keys = {"role", "content", "name", "reasoning_content"}
+    allowed_keys = {"role", "content", "name"}
     temp_messages = []
     for m in messages:
         role = m.get("role")
@@ -108,7 +108,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
                         assistant + tool messages are appended in-place.
              max_rounds: int = 50 — max LLM+tool cycles before forced exit.
     RETURNS: AsyncIterable[Dict[str, str]] — event stream with types:
-             "content", "reasoning", "tool", "status", "usage"
+             "content", "tool", "status", "usage"
     ERRORS:  litellm exception → yields error status + content, then breaks
              stream timeout (120s) → yields timeout error status, breaks
     """
@@ -181,7 +181,6 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
         yield {"type": "status", "value": "streaming", "content": "Receiving response..."}
 
         full_content = ""
-        full_reasoning = ""
         CHUNK_TIMEOUT = 120
 
         stream_iter = response.__aiter__()
@@ -197,11 +196,6 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
                 break
 
             delta = chunk.choices[0].delta
-
-            reasoning = getattr(delta, "reasoning_content", None)
-            if reasoning:
-                full_reasoning += reasoning
-                yield {"type": "reasoning", "content": reasoning}
 
             content = delta.content
             if content:
@@ -235,7 +229,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
         tool_blocks = extract_tool_blocks(full_content, _known_tools)
 
         if not tool_blocks:
-            _debug(f"LLM FINISHED — no tool calls. final_content_len={len(full_content)}, final_reasoning_len={len(full_reasoning)}")
+            _debug(f"LLM FINISHED — no tool calls. final_content_len={len(full_content)}")
             break
 
         _debug(f"LLM REQUESTED {len(tool_blocks)} XML tool block(s): {[b['name'] for b in tool_blocks]}")
@@ -248,8 +242,6 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         # Append the assistant message (without XML)
         assistant_msg = {"role": "assistant", "content": safe_content or None}
-        if full_reasoning:
-            assistant_msg["reasoning_content"] = full_reasoning
         messages.append(assistant_msg)
 
         # Execute each tool block (ALWAYS exactly one per round)
