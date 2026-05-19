@@ -660,7 +660,9 @@ class ToolCapableAgent:
                 return output
 
             safe_content = strip_tool_blocks(full_content, _known_tools)
-            assistant_msg = {"role": "assistant", "content": safe_content or None}
+            if safe_content is None:
+                safe_content = " "
+            assistant_msg = {"role": "assistant", "content": safe_content}
             self.messages.append(assistant_msg)
 
             log.info("│ %s round %d: %d tool call(s)", self.name, round_num, len(tool_blocks))
