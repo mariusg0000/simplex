@@ -235,8 +235,11 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
     detail_filename = f"{stem}.{suffix}.md"
     detail_path = work_dir / detail_filename
 
+    md_content = (
+        f"===REQUEST===\n{request}\n\n===SHORT_DESCRIPTION===\n{short}\n\n===FULL_DESCRIPTION===\n{full}\n"
+    )
     try:
-        detail_path.write_text(full, encoding="utf-8")
+        detail_path.write_text(md_content, encoding="utf-8")
     except Exception as e:
         return f"Error: failed to write detail file '{detail_filename}': {e}"
 
