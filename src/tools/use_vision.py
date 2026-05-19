@@ -9,6 +9,7 @@ import base64
 import io
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 
@@ -222,7 +223,7 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
 
     # Write full description to a file in the session folder
     work_dir = Path(work_dir)
-    stem = target.stem
+    stem = re.sub(r"\s+", "_", target.stem)
     suffix = uuid.uuid4().hex[:8]
     detail_filename = f"{stem}.{suffix}.md"
     detail_path = work_dir / detail_filename
