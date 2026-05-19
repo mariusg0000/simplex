@@ -236,7 +236,7 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
     detail_path = work_dir / detail_filename
 
     md_content = (
-        f"===REQUEST===\n{request}\n\n===SHORT_DESCRIPTION===\n{short}\n\n===FULL_DESCRIPTION===\n{full}\n"
+        f"===REQUEST===\n{request}\n\n===RESULT===\n{full}\n"
     )
     try:
         detail_path.write_text(md_content, encoding="utf-8")
