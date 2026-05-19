@@ -659,10 +659,8 @@ class ToolCapableAgent:
                     on_step(AgentStep(self.name, round_num, "done", output[:200]))
                 return output
 
-            safe_content = strip_tool_blocks(full_content, _known_tools)
-            if safe_content is None:
-                safe_content = " "
-            assistant_msg = {"role": "assistant", "content": safe_content}
+            strip_tool_blocks(full_content, _known_tools)  # extracts tool blocks, we keep full_content in message
+            assistant_msg = {"role": "assistant", "content": full_content}
             self.messages.append(assistant_msg)
 
             log.info("│ %s round %d: %d tool call(s)", self.name, round_num, len(tool_blocks))
