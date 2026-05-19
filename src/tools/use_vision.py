@@ -232,4 +232,4 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
     except Exception as e:
         return f"Error: failed to write detail file '{detail_filename}': {e}"
 
-    return f"{short}\n[DETAIL: {detail_filename}]"
+    return f"{short}\n[DETAIL: {detail_path}]"
