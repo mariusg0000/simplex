@@ -2,10 +2,12 @@
 src/ui/app.py · Main UI layout · Top bar, sidebar, chat area, input bar.
 """
 
+import asyncio
 from nicegui import ui
 from src.ui import state
 from src.ui.sidebar import refresh_sidebar
 from src.ui.settings import create_settings_dialog
+from src.db import db
 from src.storage import storage
 
 
@@ -191,6 +193,18 @@ def init_ui():
         state.drawer = drawer
         state.sidebar_content = ui.column().classes("w-full gap-0")
         refresh_sidebar()
+
+    # After UI is ready, load last session or create new one if history is empty
+    async def _init_session():
+        await asyncio.sleep(0.1)
+        from src.ui.chat_view import load_chat, start_new_chat
+        sessions = db.list_sessions()
+        if sessions:
+            await load_chat(sessions[0]["id"])
+        else:
+            await start_new_chat()
+
+    ui.timer(0.1, _init_session, once=True)
 
     settings_dialog = create_settings_dialog(apply_terminal_styles)
 
