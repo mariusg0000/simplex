@@ -182,22 +182,13 @@ class AgentRegistry:
                         "parameters": {
                             "type": "object",
                             "properties": {
-                                "files": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": (
-                                        "Relative filenames in the shared session folder that contain "
-                                        "content to work with. The agent reads these directly. "
-                                        "Do NOT copy file content into 'task'."
-                                    ),
-                                },
                                 "task": {
                                     "type": "string",
                                     "description": (
                                         f"Task for the {name} agent. "
                                         "Describe WHAT to do and HOW (layout, format). "
-                                        "Do NOT include raw document content here — "
-                                        "put content in files and pass filenames in 'files'."
+                                        "Do NOT include raw document content inline — "
+                                        "put content in files in the session folder and pass filenames in the task text."
                                     ),
                                 },
                             },
@@ -230,20 +221,15 @@ class AgentRegistry:
             return f"Error: Agent '{name}' not found."
 
         task = arguments.get("task", "")
-        files = arguments.get("files", [])
 
         MAX_TASK_LENGTH = 2000
         if len(task) > MAX_TASK_LENGTH:
             log.warning("Agent '%s' task too long (%d chars), rejecting", name, len(task))
             return (
                 f"Error: task too long ({len(task)} chars, max {MAX_TASK_LENGTH}). "
-                "Put content in files in the session folder and pass filenames in "
-                "the 'files' parameter instead. Do NOT inline document content in 'task'."
+                "Put document content in files in the session folder and pass filenames "
+                "in the task text instead. Do NOT inline content."
             )
-
-        if files:
-            files_str = "\n".join(f"- {f}" for f in files)
-            task = f"{task}\n\nCONTENT FILES:\n{files_str}\n\nThe files listed above are in the shared session folder. Read them with read_file(). Do NOT re-read them via the main agent."
 
         log.info("=== Agent '%s' called ===", name)
         log.info("task (first 300): %s", task[:300])
@@ -526,6 +512,41 @@ class ToolCapableAgent:
         system_prompt = self._build_system_prompt()
         if dynamic_context:
             system_prompt += "\n\n" + dynamic_context
+        # Append XML tool format instructions
+        if self.allowed_tools:
+            schemas = self._get_allowed_schemas()
+            lines = [
+                "",
+                "## AVAILABLE TOOLS",
+                "",
+                "Call tools with XML blocks:",
+                "<tool_name>",
+                "  <param_name>value</param_name>",
+                "</tool_name>",
+                "",
+                "Tools:",
+            ]
+            for s in schemas:
+                fn = s["function"]
+                name = fn["name"]
+                desc = fn.get("description", "").strip()
+                params = fn.get("parameters", {}).get("properties", {})
+                required = set(fn.get("parameters", {}).get("required", []))
+                if params:
+                    lines.append(f"• {name} — {desc}")
+                    for pname, pinfo in params.items():
+                        req = " (required)" if pname in required else ""
+                        pdesc = pinfo.get("description", "")
+                        lines.append(f"  <{pname}>{req} — {pdesc}")
+                else:
+                    lines.append(f"• {name} — {desc}")
+            lines.extend([
+                "",
+                "IMPORTANT: Return ONLY ONE tool block per response.",
+                "Output the XML block without surrounding explanation or markdown fences.",
+            ])
+            system_prompt += "\n" + "\n".join(lines)
+
         self.messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": task_input},
@@ -533,6 +554,7 @@ class ToolCapableAgent:
 
         round_num = 1
         gave_fallback = False
+        last_tool_name: Optional[str] = None
         while round_num <= self.max_rounds:
             log.info("┌─ %s round %d/%d", self.name, round_num, self.max_rounds)
 
@@ -551,6 +573,7 @@ class ToolCapableAgent:
                     api_base=llm_api_base,
                     temperature=0.1,
                     stream=True,
+                    timeout=60,
                 )
             except asyncio.CancelledError:
                 log.warning("! agent '%s' cancelled by user", self.name)
@@ -567,9 +590,25 @@ class ToolCapableAgent:
             buf = {"content": ""}
             last_emit = 0.0
             try:
-                async for chunk in response:
+                stream_iter = response.__aiter__()
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(stream_iter.__anext__(), timeout=120)
+                    except StopAsyncIteration:
+                        log.info("│ %s stream ended via StopAsyncIteration", self.name)
+                        break
+                    except asyncio.TimeoutError:
+                        log.warning("! agent '%s' stream timed out", self.name)
+                        break
                     delta = chunk.choices[0].delta
-
+                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        if on_stream:
+                            on_stream(AgentStreamChunk(self.name, round_num, "reasoning", delta.reasoning_content))
+                    if chunk.choices[0].finish_reason in ("stop", "length"):
+                        if delta.content:
+                            full_content += delta.content
+                            buf["content"] += delta.content
+                        break
                     if delta.content:
                         full_content += delta.content
                         buf["content"] += delta.content
@@ -579,7 +618,6 @@ class ToolCapableAgent:
                             on_stream(AgentStreamChunk(self.name, round_num, "content", buf["content"]))
                             buf["content"] = ""
                         last_emit = now
-
             except asyncio.CancelledError:
                 log.warning("! agent '%s' streaming cancelled", self.name)
                 if on_step:
@@ -605,8 +643,18 @@ class ToolCapableAgent:
                      self.name, round_num, len(full_content), len(tool_blocks))
 
             if not has_tool_calls:
+                if last_tool_name is None or last_tool_name != self.done_tool_name:
+                    log.info("│ %s round %d: no tool calls, nudging (last_tool=%s)", self.name, round_num, last_tool_name)
+                    nudge = (
+                        "\n\nYou must use tools to complete this task. "
+                        "Output XML blocks like `<tool_name><param>value</param></tool_name>`. "
+                        "Do NOT plan in text — call a tool now."
+                    )
+                    self.messages.append({"role": "user", "content": nudge})
+                    round_num += 1
+                    continue
                 output = full_content or ""
-                log.info("└─ %s done (no tool calls, %d chars)", self.name, len(output))
+                log.info("└─ %s done (no tool calls after task_done, %d chars)", self.name, len(output))
                 if on_step:
                     on_step(AgentStep(self.name, round_num, "done", output[:200]))
                 return output
@@ -628,6 +676,7 @@ class ToolCapableAgent:
                 log.info("│   %s → calling %s(args=%s)", self.name, name, args)
                 result = await registry.call(name, args)
                 result_str = str(result)
+                last_tool_name = name
                 log.info("│   %s ← %s", self.name, result_str[:250])
 
                 if on_step:

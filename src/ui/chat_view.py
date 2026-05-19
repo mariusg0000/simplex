@@ -63,7 +63,7 @@ async def refresh_chat_display():
                     # Tool result — show minimal tool indicator
                     m = _TOOL_RESULT_RE.search(content)
                     tool_name = m.group(1) if m else "tool"
-                    ui.label(f"▸ tool: {tool_name}").classes("terminal-tool")
+                    ui.label(f"\n▸ tool: {tool_name}").classes("terminal-tool")
                 else:
                     with ui.element("div").classes("terminal-user-block"):
                         ui.label("▸ You:").classes("terminal-user-prefix")
@@ -87,7 +87,7 @@ async def refresh_chat_display():
                                 cmd_snippet = cmd[:50] + ("..." if len(cmd) > 50 else "")
                             except (json.JSONDecodeError, KeyError, TypeError):
                                 pass
-                label = f"▸ tool: {msg.get('name', 'unknown')}"
+                label = f"\n▸ tool: {msg.get('name', 'unknown')}"
                 if cmd_snippet:
                     label += f" — {cmd_snippet}"
                 ui.label(label).classes("terminal-tool")
@@ -248,9 +248,15 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                     try: thinking_indicator.delete()
                     except: pass
                     thinking_indicator = None
-                state.log_activity(f"[main] ▸ tool: {chunk['content']}")
+                state.log_activity(f"\n[main] ▸ tool: {chunk['content']}")
+
+            elif chunk["type"] == "reasoning":
+                state._reasoning_accumulator = state._reasoning_accumulator + chunk["content"] if hasattr(state, "_reasoning_accumulator") else chunk["content"]
 
             elif chunk["type"] == "content":
+                if hasattr(state, "_reasoning_accumulator"):
+                    state.log_activity(state._reasoning_accumulator)
+                    del state._reasoning_accumulator
                 if thinking_indicator:
                     try: thinking_indicator.delete()
                     except: pass
@@ -278,6 +284,10 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
         if thinking_indicator:
             try: thinking_indicator.delete()
             except: pass
+
+        if hasattr(state, "_reasoning_accumulator"):
+            state.log_activity(state._reasoning_accumulator)
+            del state._reasoning_accumulator
 
         state.close_activity_log()
         state.status_label.set_text("Saving to DB...")

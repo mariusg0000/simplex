@@ -40,12 +40,17 @@ class ChatDatabase:
         """
         Saves or updates a chat session.
         Filters out system messages to allow for dynamic prompt updates.
+        Strips reasoning_content from all messages before saving.
         """
         # Filter out system messages
         chat_history = [m for m in messages if m.get("role") != "system"]
-        
+
         if not chat_history:
             return
+
+        # Strip reasoning_content to save space (shown only in Activity Log, never persisted)
+        for m in chat_history:
+            m.pop("reasoning_content", None)
 
         json_messages = json.dumps(chat_history)
         updated_at = datetime.now().isoformat()

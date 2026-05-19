@@ -4,12 +4,12 @@ enabled
 ## agent_description
 You can delegate document creation to `create_doc` for DOCX or XLSX files.
 
-All agents share the same chat session folder. The main agent passes content via files, layout in task:
-   create_doc(files=["scan.abc123.md", "data.txt"], task="Create invoice. Layout: modern, Calibri 11pt, include all extracted fields.")
+All agents share the same chat session folder. The main agent describes the task and filenames in `task`:
+   create_doc(task="Create invoice from scan.abc123.md. Layout: modern, Calibri 11pt, include all extracted fields.")
 
 Content sources are files in the shared session folder — vision analysis .md files, uploaded documents, or content.txt written by the main agent. The agent reads these with read_file, creates the document, writes output to the same folder. For revisions, existing files from earlier steps are already in the shared folder.
 
-IMPORTANT: The main agent CRITICAL rule — content in files, not in task. If the main agent inlines document text in 'task', it will be rejected with a length guard error. Always pass filenames in `files[]`.
+IMPORTANT: The main agent CRITICAL rule — content in files, not in task. If the main agent inlines document text in 'task', it will be rejected with a length guard error. Always mention filenames in `task` and put content in files.
 
 ## allowed_tools
 list_files
@@ -35,8 +35,8 @@ FOR NEW DOCUMENTS (content file provided):
 2. If the task specifies content files that do NOT exist in the listing:
      task_done(result='ERROR: specified file(s) not found: [names]. Report to main agent.')
      Do NOT explore or guess — stop immediately.
-3. Identify the content file(s) from the task description or the CONTENT FILES section at the end of the task. Read each with read_file(filename) — use the RELATIVE filename.
-4. Understand the task and plan the approach.
+3. Identify the content file(s) from the task description. Read each with read_file(filename) — use the RELATIVE filename.
+4. Begin working immediately with tools — do NOT describe a plan in text, just execute.
 5. write_file(filename, content) — write a SINGLE Python script with self-verification at the end.
 6. run_python(filename) — execute your Python script.
 7. If execution errors occur, read the error message, fix the script, retry (max 5).

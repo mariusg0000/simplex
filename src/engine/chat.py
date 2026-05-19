@@ -197,6 +197,9 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
             delta = chunk.choices[0].delta
 
+            if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                yield {"type": "reasoning", "content": delta.reasoning_content}
+
             content = delta.content
             if content:
                 full_content += content

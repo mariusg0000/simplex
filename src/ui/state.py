@@ -86,12 +86,25 @@ def make_sub_agent_callback():
                     _console = ui.label("").classes(
                         "text-[11px] font-mono text-black leading-5 py-0.5 whitespace-pre-wrap"
                     )
-            _console.set_text((_console.text or "") + _collapse_newlines(f"[{chunk.agent_name}] {chunk.content}"))
+            is_reasoning = chunk.chunk_type == "reasoning"
+            if is_reasoning:
+                buf = getattr(_console, "_reasoning_buf", "")
+                _console._reasoning_buf = buf + chunk.content
+            else:
+                reasoning_buf = getattr(_console, "_reasoning_buf", None)
+                if reasoning_buf:
+                    _console.set_text((_console.text or "") + _collapse_newlines(f"[{chunk.agent_name}] [reasoning] {reasoning_buf}"))
+                    del _console._reasoning_buf
+                _console.set_text((_console.text or "") + _collapse_newlines(f"[{chunk.agent_name}] {chunk.content}"))
             _scroll_sub_agent()
 
     def _on_step(step: AgentStep):
         global _console, sub_agent_dismissed, _sub_agent_closing
         if step.step_type == "done":
+            if _console is not None:
+                reasoning_buf = getattr(_console, "_reasoning_buf", None)
+                if reasoning_buf:
+                    _console.set_text((_console.text or "") + _collapse_newlines(f"[reasoning] {reasoning_buf}"))
             _console = None
             if sub_agent_panel:
                 _sub_agent_closing = True
@@ -241,16 +254,13 @@ def get_system_prompt() -> dict:
         "2. TRUST THE TOOLS: If a search tool returns results, those are the best matches. Present them immediately.\n"
         "3. NO REDUNDANCY: Do not call the same tool with slightly different parameters if you already have relevant data.\n"
         "4. RERANKER TRUST: The file search tool uses an internal Reranker. The top results it returns are the final candidates.\n"
-          "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it. "
-        "For `create_doc`: pass content files separately from instructions:\n"
-        "   create_doc(files=[\"scan.abc123.md\"], task=\"Create invoice. Layout: modern, Calibri 11pt\")\n"
-        "   - `files`: relative filenames in the shared session folder (content written by use_vision, user upload, or write_file)\n"
-        "   - `task`: brief layout/format instructions only — NO document content here\n"
-        "If content files from use_vision/OCR already exist in the session folder, "
-        "pass those filenames directly. Do NOT re-read, re-write, or combine them.\n"
-        "If content is only in your context (not yet in a file), write it first: write_file(\"content.txt\", text), then pass the filename in files=.\n"
+          "5. DELEGATE TO AGENTS: When a task matches an AVAILABLE AGENT description, delegate it.\n"
+        "For `create_doc`: describe the task in natural language in `task`. Mention the content filenames in the task text:\n"
+        "   create_doc(task=\"Create invoice from scan.abc123.md. Layout: modern, Calibri 11pt\")\n"
+        "Content files (written by use_vision, user upload, or write_file) are in the session folder.\n"
+        "If content files from use_vision already exist in the session folder, mention their names in the task.\n"
         "CRITICAL: NEVER read a file just to pass its content inline. "
-        "Put content in session folder files, pass filenames in `files`, keep `task` brief.\n"
+        "Put content in session folder files, mention filenames in `task`, keep `task` brief.\n"
          "6. TRUST SUB-AGENT VERIFICATION: Sub-agents verify their own output before reporting success. "
         "Do NOT inspect sub-agent output in any way — no read_file, no bash ls, no file size check. "
         "If the sub-agent says 'verified OK', it IS verified OK. "
