@@ -271,16 +271,6 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                 response_container.set_content((response_container.content or "") + chunk["content"])
                 state.scroll_area.scroll_to(percent=1.0, duration=0)
 
-            elif chunk["type"] == "content_reset":
-                safe_content = chunk["content"]
-                total_response = safe_content
-                if response_container is None:
-                    with state.chat_content:
-                        response_container = ui.markdown(safe_content).classes("terminal-content")
-                else:
-                    response_container.set_content(safe_content)
-                state.scroll_area.scroll_to(percent=1.0, duration=0)
-
         if thinking_indicator:
             try: thinking_indicator.delete()
             except: pass

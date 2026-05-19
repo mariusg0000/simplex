@@ -18,6 +18,7 @@ from src.engine.tools import registry as tool_registry
 from src.engine.agents import agent_registry
 from src.engine.skills import skill_registry
 from src.engine.tool_parser import (
+    StreamingToolParser,
     extract_tool_blocks, strip_tool_blocks, is_result_message,
     format_result, format_display_for_activity_log,
 )
@@ -182,6 +183,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         full_content = ""
         CHUNK_TIMEOUT = 120
+        parser = StreamingToolParser(_known_tools)
 
         stream_iter = response.__aiter__()
         while True:
@@ -203,11 +205,18 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
             content = delta.content
             if content:
                 full_content += content
-                yield {"type": "content", "content": content}
+                for event in parser.feed(content):
+                    yield event
 
             if chunk.choices[0].finish_reason in ("stop",):
                 _debug(f"Stream finished via finish_reason={chunk.choices[0].finish_reason}")
                 break
+
+        # Flush any remaining buffered content
+        for event in parser.flush():
+            yield event
+
+        # full_content already has all content (including XML) from the stream
 
         output_tokens = 0
         if full_content:
@@ -229,7 +238,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
         yield {"type": "usage", "context_tokens": input_tokens, "context_pct": context_pct, "cost": cumulative_cost}
 
         # --- XML-based tool call detection ---
-        tool_blocks = extract_tool_blocks(full_content, _known_tools)
+        tool_blocks = parser.tool_blocks
 
         if not tool_blocks:
             _debug(f"LLM FINISHED — no tool calls. final_content_len={len(full_content)}")
@@ -237,14 +246,8 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         _debug(f"LLM REQUESTED {len(tool_blocks)} XML tool block(s): {[b['name'] for b in tool_blocks]}")
 
-        # Strip XML from content for chat display
-        safe_content = strip_tool_blocks(full_content, _known_tools)
-
-        # Replace displayed content with XML-stripped version
-        yield {"type": "content_reset", "content": safe_content}
-
-        # Append the assistant message (without XML)
-        assistant_msg = {"role": "assistant", "content": safe_content or None}
+        # Append the assistant message (full content including XML)
+        assistant_msg = {"role": "assistant", "content": full_content}
         messages.append(assistant_msg)
 
         # Execute each tool block (ALWAYS exactly one per round)

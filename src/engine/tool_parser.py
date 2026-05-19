@@ -2,6 +2,10 @@
 src/engine/tool_parser.py · XML text-based tool call parser.
 Parses LLM output for <tool_name><param>value</param></tool_name> blocks,
 strips them from chat display text, and formats tool results for injection.
+
+StreamingToolParser: incremental detection during LLM streaming — only yields
+non-tool text for display, so XML never appears in chat (no content_reset needed).
+
 Depends on: re, logging.
 """
 
@@ -32,7 +36,6 @@ def extract_tool_blocks(text: str, known_tools: set[str]) -> list[dict]:
     blocks: list[dict] = []
     pos = 0
     while pos < len(text):
-        # Look for the next <tag> where tag ∈ known_tools
         match = TOOL_START_RE.search(text, pos)
         if not match:
             break
@@ -92,9 +95,115 @@ def strip_tool_blocks(text: str, known_tools: set[str]) -> str:
         pos = close_pos + len(close_tag)
 
     stripped = "".join(result).strip()
-    # Collapse multiple blank lines into one
     stripped = re.sub(r"\n{3,}", "\n\n", stripped)
     return stripped
+
+
+class StreamingToolParser:
+    """
+    WHAT:    Incremental XML tool block detection during LLM streaming.
+    WHY:     Prevents tool call XML from appearing in chat display. Instead of
+             streaming everything then doing content_reset, this detects tool
+             blocks on-the-fly and only yields non-tool text for display.
+    HOW:     State machine per character: NORMAL → MAYBE_TOOL (saw '<') →
+             IN_TOOL (matched '<tool_name>') → NORMAL (saw '</tool_name>').
+             Unknown tags are flushed as text. Incomplete blocks at flush()
+             are also emitted as text.
+    """
+
+    def __init__(self, known_tools: set[str]):
+        self.known_tools = known_tools
+        self._state = "normal"
+        self._buf = ""
+        self._display = ""
+        self._tools: list[dict] = []
+        self._tool_name: str | None = None
+
+    def feed(self, chunk: str):
+        """
+        WHAT:    Process a chunk of streamed text.
+        WHY:     Called for each delta.content chunk from the LLM stream.
+        HOW:     Character-by-character state machine. Yields content events
+                 for non-tool text. Accumulates tool blocks internally.
+        PARAMS:  chunk: str — new text from LLM stream
+        YIELDS:  dict — {"type": "content", "content": "..."}
+        """
+        for c in chunk:
+            if self._state == "normal":
+                if c == "<":
+                    self._state = "maybe"
+                    self._buf = "<"
+                else:
+                    self._display += c
+
+            elif self._state == "maybe":
+                potential = self._buf + c
+                matched = any(
+                    f"<{t}".startswith(potential) for t in self.known_tools
+                )
+                is_complete = potential in (f"<{t}>" for t in self.known_tools)
+
+                if is_complete:
+                    self._tool_name = potential[1:-1]
+                    self._state = "intool"
+                    self._buf = ""
+                elif not matched:
+                    self._display += self._buf
+                    self._buf = ""
+                    self._state = "normal"
+                    if c == "<":
+                        self._state = "maybe"
+                        self._buf = "<"
+                    else:
+                        self._display += c
+                else:
+                    self._buf = potential
+
+            elif self._state == "intool":
+                self._buf += c
+                close_tag = f"</{self._tool_name}>"
+                if self._buf.endswith(close_tag):
+                    raw = f"<{self._tool_name}>{self._buf}"
+                    args = _parse_args(raw)
+                    self._tools.append(
+                        {"name": self._tool_name, "args": args, "raw": raw}
+                    )
+                    self._buf = ""
+                    self._tool_name = None
+                    self._state = "normal"
+
+        if self._display:
+            yield {"type": "content", "content": self._display}
+            self._display = ""
+
+    def flush(self):
+        """
+        WHAT:    Flush any remaining buffered content as text.
+        WHY:     Called after the stream ends. Incomplete tool blocks are
+                 treated as plain text.
+        YIELDS:  dict — {"type": "content", "content": "..."}
+        """
+        if self._state == "maybe":
+            self._display += self._buf
+        elif self._state == "intool":
+            self._display += f"<{self._tool_name}>{self._buf}"
+        self._state = "normal"
+        self._buf = ""
+        self._tool_name = None
+        if self._display:
+            yield {"type": "content", "content": self._display}
+            self._display = ""
+
+    @property
+    def tool_blocks(self) -> list[dict]:
+        return self._tools
+
+    def reset(self):
+        self._state = "normal"
+        self._buf = ""
+        self._display = ""
+        self._tools = []
+        self._tool_name = None
 
 
 def is_result_message(content: str) -> bool:
@@ -121,7 +230,6 @@ def format_result(name: str, result_text: str) -> str:
              result_text: str — tool output (may be long)
     RETURNS: str — formatted result string
     """
-    # Escape XML special chars in result_text
     safe = _escape_xml(result_text)
     return f"<result name='{name}'>{safe}</result>"
 
@@ -150,14 +258,11 @@ def _parse_args(xml_block: str) -> dict[str, str]:
     PARAMS:  xml_block: str — full <tool_name>...</tool_name> XML
     RETURNS: dict[str, str] — param_name → param_value
     """
-    # Unroll CDATA sections before regex
     def _unroll_cdata(m):
         content = m.group(1)
-        # Escape only what's needed for XML safety inside regex captures
         return content
     unrolled = CDATA_RE.sub(_unroll_cdata, xml_block)
 
-    # Strip root tags: <tool_name>...</tool_name>
     inner = re.sub(r"^<\w+[^>]*>(.*)</\w+>$", r"\1", unrolled.strip(), flags=re.DOTALL)
     if inner == unrolled.strip():
         return {}
