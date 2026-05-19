@@ -232,6 +232,17 @@ async def execute(command: str, explanation: str, timeout: int = 30, need_confir
                         f"allowed directory/directories ({', '.join(str(d) for d in allowed_dirs)}). "
                         f"{'All files must stay inside your session folder.' if is_sub_agent else 'Configure working directories in Settings.'}"
                     )
+    # XML parser returns all values as strings; convert to expected types
+    if isinstance(timeout, str):
+        try:
+            timeout = int(timeout)
+        except (ValueError, TypeError):
+            timeout = 30
+    if isinstance(need_confirmation, str):
+        need_confirmation = need_confirmation.lower() in ("true", "1", "yes")
+    if isinstance(need_confirmation, int):
+        need_confirmation = bool(need_confirmation)
+
     if timeout < 1:
         timeout = 1
     if timeout > 120:
