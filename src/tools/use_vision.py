@@ -27,9 +27,9 @@ def get_description() -> dict:
     return {
         "description": (
             "Analyze a scanned document, image, or photo using a vision AI model. "
-            "Use this when tesseract/pytesseract OCR fails or produces poor results — "
-            "handles complex layouts, tables, handwriting, poor-quality scans, and "
-            "non-standard fonts. Fall back to this after one failed OCR attempt. "
+            "Handles text extraction, complex layouts, tables, handwriting, poor-quality "
+            "scans, and non-standard fonts in a single pass. This is the primary tool for "
+            "all image-to-text tasks — do NOT use tesseract/pytesseract OCR. "
             "Returns a short summary inline and writes the full analysis to a .md "
             "file in the session folder."
         ),

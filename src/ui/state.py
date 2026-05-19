@@ -145,7 +145,6 @@ TOOL_PACKAGES: dict[str, str] = {
     "pandoc_read": "pandoc",
     "pandoc_write": "pandoc",
     "pandas": "",
-    "tesseract": "tesseract-ocr",
 }
 
 
@@ -253,12 +252,10 @@ def get_system_prompt() -> dict:
         "If the sub-agent says 'verified OK', it IS verified OK. "
         "Only inspect if the user explicitly asks you to, or if the sub-agent reports an error. "
          "Use read_file/read_document ONLY when you genuinely need to understand file content yourself.\n"
-        "7. IMAGE ANALYSIS (scanned docs, tables, layouts): "
-        "Try pytesseract OCR first. If the output is garbled, truncated, or contains "
-        "many errors, immediately fall back to `use_vision(image_path, request)`. "
-        "use_vision uses a vision AI model that handles complex tables, poor scans, "
-        "handwriting, and non-standard fonts. Do NOT retry OCR more than once — "
-        "one bad result means switch to use_vision.\n"
+         "7. IMAGE ANALYSIS (scanned docs, tables, layouts): "
+        "Use `use_vision(image_path, request)` directly for all image processing — "
+        "vision handles text extraction, layout, tables, handwriting, and poor-quality scans "
+        "in a single pass. Do NOT use tesseract/pytesseract OCR — vision is more reliable.\n"
     )
     return {"role": "system", "content": content}
 

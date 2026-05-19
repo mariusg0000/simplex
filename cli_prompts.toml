@@ -45,9 +45,6 @@ KEY FORMATS: .docx, .odt, .pptx, .epub, .html
 NOTE: PDF documents are created exclusively with weasyprint, not pandoc.
 """
 
-[tesseract]
-prompt = "tesseract — OCR text from images and scanned PDFs — tesseract <input.png> <output_base>. Page segmentation mode (--psm): 3 = auto (default), 4 = single column of text, 6 = uniform block of text, 11 = sparse text, 12 = sparse with orientation. Language: -l eng for English, -l ron for Romanian, combine with + (e.g. -l eng+ron). For scanned documents: --dpi 300. Output format: .txt (default), add pdf for searchable PDF, hocr for HTML with position data. For PDF-to-image conversion, use pymupdf (fitz)."
-
 [pymupdf]
 prompt = "pymupdf (import fitz) — PDF manipulation via Python (pre-installed in scripts venv). Use `python -c` with fitz for: text extraction (get_text), metadata, merge/split pages, page-to-image (get_pixmap→PNG/JPEG), list fonts, extract images. For PDF creation, delegate to create_pdf tool."
 
