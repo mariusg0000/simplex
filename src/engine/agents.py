@@ -180,9 +180,23 @@ class AgentRegistry:
                         "parameters": {
                             "type": "object",
                             "properties": {
+                                "files": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": (
+                                        "Relative filenames in the shared session folder that contain "
+                                        "content to work with. The agent reads these directly. "
+                                        "Do NOT copy file content into 'task'."
+                                    ),
+                                },
                                 "task": {
                                     "type": "string",
-                                    "description": f"Task for the {name} agent. Describe what you need in detail."
+                                    "description": (
+                                        f"Task for the {name} agent. "
+                                        "Describe WHAT to do and HOW (layout, format). "
+                                        "Do NOT include raw document content here — "
+                                        "put content in files and pass filenames in 'files'."
+                                    ),
                                 },
                             },
                             "required": ["task"],
@@ -214,6 +228,21 @@ class AgentRegistry:
             return f"Error: Agent '{name}' not found."
 
         task = arguments.get("task", "")
+        files = arguments.get("files", [])
+
+        MAX_TASK_LENGTH = 2000
+        if len(task) > MAX_TASK_LENGTH:
+            log.warning("Agent '%s' task too long (%d chars), rejecting", name, len(task))
+            return (
+                f"Error: task too long ({len(task)} chars, max {MAX_TASK_LENGTH}). "
+                "Put content in files in the session folder and pass filenames in "
+                "the 'files' parameter instead. Do NOT inline document content in 'task'."
+            )
+
+        if files:
+            files_str = "\n".join(f"- {f}" for f in files)
+            task = f"{task}\n\nCONTENT FILES:\n{files_str}\n\nThe files listed above are in the shared session folder. Read them with read_file(). Do NOT re-read them via the main agent."
+
         log.info("=== Agent '%s' called ===", name)
         log.info("task (first 300): %s", task[:300])
 

@@ -4,10 +4,12 @@ enabled
 ## agent_description
 You can delegate document creation to `create_doc` for DOCX or XLSX files.
 
-All agents share the same chat session folder. The main agent writes content to a file first (relative name), then calls:
-   create_doc(task="Read content.txt and create [document type]. Layout: [specs]")
+All agents share the same chat session folder. The main agent passes content via files, layout in task:
+   create_doc(files=["scan.abc123.md", "data.txt"], task="Create invoice. Layout: modern, Calibri 11pt, include all extracted fields.")
 
-The agent reads files from the shared folder with read_file, creates the document, and writes the output to the same folder. For revisions, the existing files from earlier steps are already in the shared folder.
+Content sources are files in the shared session folder — vision analysis .md files, uploaded documents, or content.txt written by the main agent. The agent reads these with read_file, creates the document, writes output to the same folder. For revisions, existing files from earlier steps are already in the shared folder.
+
+IMPORTANT: The main agent CRITICAL rule — content in files, not in task. If the main agent inlines document text in 'task', it will be rejected with a length guard error. Always pass filenames in `files[]`.
 
 ## allowed_tools
 list_files
@@ -30,7 +32,7 @@ WORKFLOW:
 
 FOR NEW DOCUMENTS (content file provided):
 1. list_files — see what files exist in the shared session folder.
-2. read_file("content.txt") — read the content file (written by the main agent). Use the RELATIVE filename.
+2. Identify the content file(s) from the task description or the CONTENT FILES section at the end of the task. Read each with read_file(filename) — use the RELATIVE filename.
 3. Understand the task and plan the approach.
 4. write_file(filename, content) — write a SINGLE Python script with self-verification at the end.
 5. run_python(filename) — execute your Python script.
