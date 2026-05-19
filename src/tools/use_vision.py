@@ -1,13 +1,13 @@
 """
 src/tools/use_vision.py · Scale image → call vision model → write detail file.
-Reads an image, scales it, sends to the configured vision model, returns a short
-summary inline and writes the full analysis to a file in the session folder.
+Reads an image, scales it, sends to the configured vision model, splits response
+on the ===FULL=== marker: short summary returned inline, full analysis written
+to a .md file in the session folder.
 Depends on: PIL, httpx, settings.vision_model, _agent_params (work_dir).
 """
 
 import base64
 import io
-import json
 import logging
 import re
 import uuid
@@ -65,15 +65,15 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
              short summary flows back; the full detailed analysis persists on disk
              in the session folder for later reference.
     HOW:     1. Opens image with PIL, scales if needed, encodes as base64 JPEG.
-             2. Sends to the configured vision model with a JSON-format system prompt.
-             3. Parses the JSON response for short_description and full_description.
-             4. Writes full_description to a .md file in the session folder (work_dir).
-             5. Returns short_description + file path to the caller.
+              2. Sends to the configured vision model with a marker-based system prompt.
+              3. Splits response on the ===FULL=== marker into short + full sections.
+              4. Writes full analysis to a .md file in the session folder (work_dir).
+              5. Returns short summary + file path to the caller.
     PARAMS:  image_path: str — absolute path to the image file
              request: str — detailed analysis prompt for the vision model
              _agent_params: dict or None — injected by ToolRegistry; carries work_dir
     RETURNS: str — short_description + [DETAIL: filename.md], or error string
-    ERRORS:  File not found, PIL open failure, API failure, JSON parse failure
+    ERRORS:  File not found, PIL open failure, API failure, marker not found
     """
     if not image_path or not request:
         return (
@@ -141,23 +141,25 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
 
     SYSTEM = (
         "You are a precise document analyst. "
-        "Return ONLY a valid JSON object with exactly two keys:\n"
-        "- short_description: 1-2 sentences summarising what the document IS and its key data "
-        "(e.g. \"Romanian invoice from SC Example SRL dated 15.03.2024 — total 1,250 RON, "
-        "3 line items\"). Do NOT include meta-commentary like \"The document appears to be...\". "
-        "State facts directly.\n"
-        "- full_description: exhaustive analysis including: page orientation (Portrait/Landscape "
-        "and content rotation if any), layout structure (sections, columns, margins, headers, "
-        "footers), key elements (tables, images, logos, stamps, signatures, seals), tables "
-        "(row/col counts, headers, content, merged cells), text extracted verbatim with font "
-        "style/size/weight/color where readable, background/text/accent colours, all numeric "
-        "values, dates, registration numbers, codes extracted exactly. Be exhaustive — "
-        "describe everything you see.\n\n"
-        "Example format:\n"
-        "{\n"
-        '  "short_description": "Invoice from SC Example SRL dated 15.03.2024 — total 1,250 RON, 3 items.",\n'
-        '  "full_description": "PAGE ORIENTATION: Portrait\\nLAYOUT: ...\\nTABLES: ...\\nTEXT: ..."\n'
-        "}\n"
+        "Respond with exactly TWO sections separated by a line containing ONLY the word `===FULL===`.\n"
+        "\n"
+        "First section: SHORT DESCRIPTION — exactly 1-2 sentences summarising what the document IS "
+        "and its key data (e.g. \"Romanian invoice from SC Example SRL dated 15.03.2024 — total "
+        "1,250 RON, 3 line items\"). Do NOT include meta-commentary like \"The document appears "
+        "to be...\". State facts directly. Do NOT prefix with any label or marker.\n"
+        "\n"
+        "Second section (after `===FULL===`): FULL DETAILED ANALYSIS — provide the exhaustive "
+        "analysis exactly as requested by the user.\n"
+        "\n"
+        "Respond exactly like this:\n"
+        "Audit report page (page 4) analyzing accounting irregularities.\n"
+        "===FULL===\n"
+        "PAGE ORIENTATION: Portrait\n"
+        "LAYOUT: ...\n"
+        "...\n"
+        "\n"
+        "Do NOT use markdown code fences (```). Do NOT output a JSON object. "
+        "Do NOT include any text before the short description or after the full analysis.\n"
     )
 
     payload = {
@@ -200,33 +202,23 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
     if not text or not text.strip():
         return "Error: vision model returned an empty response."
 
-    # Extract JSON from response (handle markdown code fences)
-    def _extract_json(raw: str) -> dict:
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-            cleaned = re.sub(r"\s*```$", "", cleaned)
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError:
-            m = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            if m:
-                try:
-                    return json.loads(m.group())
-                except json.JSONDecodeError:
-                    pass
-        return {}
+    # Split response on the ===FULL=== marker
+    cleaned = text.strip()
+    # Strip markdown code fences if the model wraps the response anyway
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json|markdown)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
 
-    parsed = _extract_json(text)
-    if parsed.get("short_description") and parsed.get("full_description"):
-        short = parsed["short_description"].strip()
-        full = parsed["full_description"].strip()
+    parts = re.split(r"\n\s*===FULL===\s*\n", cleaned, maxsplit=1)
+    if len(parts) == 2:
+        short = parts[0].strip()
+        full = parts[1].strip()
     else:
+        log.warning("vision model response missing ===FULL=== marker — using full text as both")
         short = ""
-        full = text.strip()
+        full = cleaned
 
     if not short:
-        # Fallback: derive summary from first ~2 sentences
         sentences = full.replace("\n", " ").split(". ")
         short = ". ".join(sentences[:2]).strip()
         if short:
@@ -237,7 +229,6 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
     if not full:
         full = "(empty analysis)"
 
-    # Write full description to a file in the session folder
     work_dir = Path(work_dir)
     stem = re.sub(r"\s+", "_", target.stem)
     suffix = uuid.uuid4().hex[:8]
