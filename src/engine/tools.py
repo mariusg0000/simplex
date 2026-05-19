@@ -260,6 +260,55 @@ class ToolRegistry:
                 if s["function"]["name"] not in self._disabled
                 and s["function"]["name"] in main_tools]
 
+    def get_main_agent_text_descriptions(self) -> str:
+        """
+        WHAT:    Returns compact text descriptions of all visible tools for
+                 inclusion in the system prompt when using XML text-based tooling.
+        WHY:     When function-calling is disabled, the LLM needs tool descriptions
+                 in the system prompt to know which tools exist and how to use them.
+        HOW:     Converts each tool schema into a compact text format:
+                 • tool_name(param1, param2) — description
+                   param1: param description
+                   param2: param description
+        PARAMS:  none
+        RETURNS: str — plain-text tool descriptions for system prompt
+        """
+        self._ensure_discovered()
+        schemas = self.get_main_agent_schemas()
+        if not schemas:
+            return ""
+
+        lines = [
+            "## AVAILABLE TOOLS",
+            "",
+            "Use XML format to invoke tools:",
+            "<tool_name>",
+            "  <param_name>value</param_name>",
+            "</tool_name>",
+            "",
+            "Tools:",
+        ]
+        for s in schemas:
+            fn = s["function"]
+            name = fn["name"]
+            desc = fn.get("description", "").strip()
+            params = fn.get("parameters", {}).get("properties", {})
+            required = set(fn.get("parameters", {}).get("required", []))
+
+            if params:
+                param_str = ", ".join(params.keys())
+                lines.append(f"• {name}({param_str}) — {desc}")
+                for pname, pinfo in params.items():
+                    req = " (required)" if pname in required else ""
+                    lines.append(f"  {pname}: {pinfo.get('description', '')}{req}")
+            else:
+                lines.append(f"• {name}() — {desc}")
+
+        lines.append("")
+        lines.append("IMPORTANT: Return ONLY ONE tool block per response.")
+        lines.append("Output the XML block without any surrounding explanation or markdown fences.")
+        return "\n".join(lines)
+
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:
         """
         WHAT:    Invokes a registered tool by name with the given arguments.

@@ -17,6 +17,10 @@ from src.config import settings, logger
 from src.engine.tools import registry as tool_registry
 from src.engine.agents import agent_registry
 from src.engine.skills import skill_registry
+from src.engine.tool_parser import (
+    extract_tool_blocks, strip_tool_blocks, is_result_message,
+    format_result, format_display_for_activity_log,
+)
 from src.ui import state
 
 log = logging.getLogger("simplex.engine.chat")
@@ -63,66 +67,25 @@ litellm.drop_params = True # Standardize non-OpenAI responses
 def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     WHAT:    Cleans and validates the message history for API compatibility.
-    WHY:     Different providers (OpenAI, DeepSeek, Anthropic via LiteLLM) have strict, 
-             often conflicting requirements for message structures, tool response 
-             sequences, and mandatory fields.
-    HOW:     1. Filters keys to an allow-list (including 'reasoning_content' for DeepSeek).
-             2. Handles the 'empty content' requirement for assistant tool calls.
-             3. Enforces sequence integrity: an assistant 'tool_calls' message MUST be 
-                immediately followed by the corresponding 'tool' response messages. 
-                Incomplete turns are discarded to prevent API 400 errors.
+    WHY:     Different providers have strict requirements for message fields.
+    HOW:     Filters keys to an allow-list, handles empty/null content, and
+             discards old-format tool role messages.
     PARAMS:  messages: List[Dict[str, Any]] — The raw chat history.
-    RETURNS: List[Dict[str, Any]] — A sanitized copy of the history ready for the LLM.
+    RETURNS: List[Dict[str, Any]] — A sanitized copy ready for the LLM.
     """
+    allowed_keys = {"role", "content", "name", "reasoning_content"}
     temp_messages = []
     for m in messages:
         role = m.get("role")
-        if role == "tool":
-            clean_m = {k: v for k, v in m.items() if k in ["role", "content", "tool_call_id", "name"]}
-        else:
-            clean_m = {k: v for k, v in m.items() if k in ["role", "content", "tool_calls", "name", "reasoning_content"]}
-        
-        # Mandatory: some providers reject content entirely when tool_calls is present
-        if role == "assistant" and "tool_calls" in clean_m:
-            if not clean_m.get("content"):
-                clean_m.pop("content", None)
+        if role not in ("system", "user", "assistant"):
+            continue  # discard old-format tool role messages
+        clean_m = {k: v for k, v in m.items() if k in allowed_keys}
+        if role == "assistant" and not clean_m.get("content"):
+            clean_m["content"] = ""
         elif clean_m.get("content") is None:
             clean_m["content"] = ""
-            
-        if "tool_calls" in clean_m and not clean_m["tool_calls"]:
-            del clean_m["tool_calls"]
-            
         temp_messages.append(clean_m)
-    
-    final_sanitized = []
-    i = 0
-    while i < len(temp_messages):
-        msg = temp_messages[i]
-        
-        if msg.get("role") == "assistant" and msg.get("tool_calls"):
-            num_calls = len(msg["tool_calls"])
-            call_ids = [tc.get("id") for tc in msg["tool_calls"]]
-            
-            responses = []
-            j = i + 1
-            while j < len(temp_messages) and temp_messages[j].get("role") == "tool":
-                if temp_messages[j].get("tool_call_id") in call_ids:
-                    responses.append(temp_messages[j])
-                j += 1
-            
-            if len(responses) == num_calls:
-                final_sanitized.append(msg)
-                final_sanitized.extend(responses)
-                i = j
-            else:
-                i = j # Discard incomplete turn
-        elif msg.get("role") == "tool":
-            i += 1 # Discard orphaned response
-        else:
-            final_sanitized.append(msg)
-            i += 1
-            
-    return final_sanitized
+    return temp_messages
 
 async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> AsyncIterable[Dict[str, str]]:
     """
@@ -159,11 +122,20 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
     except:
         max_input_tokens = 131072
     cumulative_cost = 0.0
+
+    # Known tool names for XML parsing
+    _known_tools: set[str] = set()
+    for s in tool_registry.get_schemas():
+        _known_tools.add(s["function"]["name"])
+    for s in agent_registry.get_schemas():
+        _known_tools.add(s["function"]["name"])
+    for s in skill_registry.get_schemas():
+        _known_tools.add(s["function"]["name"])
+
     while True:
         round_num += 1
-        tools = tool_registry.get_main_agent_schemas() + agent_registry.get_schemas() + skill_registry.get_schemas()
         api_messages = sanitize_messages(messages)
-        tool_count = len([m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")])
+        tool_count = len([m for m in messages if m.get("role") == "assistant"])
         total_chars = sum(len(m.get("content", "") or "") for m in api_messages)
         try:
             input_tokens = litellm.token_counter(model=llm_model, messages=api_messages)
@@ -175,21 +147,15 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         _debug(f"=== LLM ROUND #{tool_count} ===")
         _debug(f"Sending {len(api_messages)} messages to LLM ({len(messages)} raw)")
-        
+
         yield {"type": "status", "value": "request", "content": f"Round {tool_count + 1}: Sending {len(api_messages)} messages (~{input_tokens} tokens)..."}
-        
-        _debug(f"Sending {len(api_messages)} messages to LLM ({len(messages)} raw)")
+
         for i, m in enumerate(api_messages):
             r = m.get("role", "?")
             c_len = len(m.get("content", "") or "") if isinstance(m.get("content"), str) else 0
-            tc = m.get("tool_calls")
-            if tc:
-                names = [t["function"]["name"] for t in tc]
-                _debug(f"  msg[{i}] role={r} content_len={c_len} tool_calls={names}")
-            else:
-                _debug(f"  msg[{i}] role={r} content_len={c_len}")
+            _debug(f"  msg[{i}] role={r} content_len={c_len}")
         _debug(f"RAW JSON to LLM:\n{_truncate_json(api_messages)}")
-        
+
         yield {"type": "status", "value": "connecting", "content": f"Connecting to LLM..."}
         _debug("=== BEFORE litellm.acompletion() ===")
 
@@ -203,8 +169,6 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
                 api_key=llm_api_key,
                 api_base=llm_api_base,
                 timeout=60,
-                tools=tools if tools else None,
-                tool_choice="auto" if tools else None
             )
         except Exception as e:
             _debug(f"LiteLLM EXCEPTION: {type(e).__name__}: {str(e)}")
@@ -212,13 +176,12 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
             yield {"type": "status", "value": "error", "content": f"Error: {str(e)}"}
             yield {"type": "content", "content": f"\n\n**LiteLLM Error:** {str(e)}"}
             break
-        
+
         _debug("=== AFTER litellm.acompletion(), starting stream ===")
         yield {"type": "status", "value": "streaming", "content": "Receiving response..."}
 
         full_content = ""
         full_reasoning = ""
-        tool_calls_stream = {}
         CHUNK_TIMEOUT = 120
 
         stream_iter = response.__aiter__()
@@ -245,17 +208,7 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
                 full_content += content
                 yield {"type": "content", "content": content}
 
-            if hasattr(delta, "tool_calls") and delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_calls_stream:
-                        tool_calls_stream[idx] = {"id": tc.id, "name": "", "arguments": ""}
-                    if tc.id: tool_calls_stream[idx]["id"] = tc.id
-                    if tc.function.name: tool_calls_stream[idx]["name"] += tc.function.name
-                    if tc.function.arguments: tool_calls_stream[idx]["arguments"] += tc.function.arguments
-
-            # Finish reason — API signals stream end without [DONE]
-            if chunk.choices[0].finish_reason in ("stop", "tool_calls"):
+            if chunk.choices[0].finish_reason in ("stop",):
                 _debug(f"Stream finished via finish_reason={chunk.choices[0].finish_reason}")
                 break
 
@@ -278,65 +231,36 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
 
         yield {"type": "usage", "context_tokens": input_tokens, "context_pct": context_pct, "cost": cumulative_cost}
 
-        if not tool_calls_stream:
+        # --- XML-based tool call detection ---
+        tool_blocks = extract_tool_blocks(full_content, _known_tools)
+
+        if not tool_blocks:
             _debug(f"LLM FINISHED — no tool calls. final_content_len={len(full_content)}, final_reasoning_len={len(full_reasoning)}")
             break
 
-        _debug(f"LLM REQUESTED {len(tool_calls_stream)} tool call(s)")
-        for idx in sorted(tool_calls_stream.keys()):
-            tc = tool_calls_stream[idx]
-            _debug(f"  tool_call[{idx}]: {tc['name']}({tc['arguments'][:200]})")
+        _debug(f"LLM REQUESTED {len(tool_blocks)} XML tool block(s): {[b['name'] for b in tool_blocks]}")
 
-        assistant_msg = {"role": "assistant", "content": full_content or None}
+        # Strip XML from content for chat display
+        safe_content = strip_tool_blocks(full_content, _known_tools)
+
+        # Replace displayed content with XML-stripped version
+        yield {"type": "content_reset", "content": safe_content}
+
+        # Append the assistant message (without XML)
+        assistant_msg = {"role": "assistant", "content": safe_content or None}
         if full_reasoning:
             assistant_msg["reasoning_content"] = full_reasoning
-        
-        formatted_tool_calls = []
-        for idx in sorted(tool_calls_stream.keys()):
-            tc = tool_calls_stream[idx]
-            formatted_tool_calls.append({
-                "id": tc["id"],
-                "type": "function",
-                "function": {"name": tc["name"], "arguments": tc["arguments"]}
-            })
-        assistant_msg["tool_calls"] = formatted_tool_calls
         messages.append(assistant_msg)
 
-        for tc in formatted_tool_calls:
-            name = tc["function"]["name"]
-            raw_args = tc["function"]["arguments"]
-            try:
-                args = json.loads(raw_args)
-            except json.JSONDecodeError as e:
-                log.warning("! JSON decode error for tool '%s': %s (pos=%s)", name, raw_args[:200], e.pos)
-                error_msg = (
-                    f"Error: Tool arguments are not valid JSON (position {e.pos}). "
-                    f"String values may contain unescaped quotes or backslashes. "
-                    f"Put document content in files and pass filenames, not inline text."
-                )
-                yield {"type": "tool", "content": f"⚠ {error_msg}"}
-                remaining = max_rounds - round_num
-                round_tag = f"\n\n[Round {round_num}/{max_rounds}"
-                if remaining <= 3:
-                    round_tag += " 🛑 CRITICAL — finish now!"
-                elif remaining <= 6:
-                    round_tag += f" ⚠️ only {remaining} left"
-                round_tag += "]"
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "name": name,
-                    "content": error_msg + round_tag,
-                })
-                continue
-            
-            cmd_snippet = ""
-            if "command" in args:
-                cmd = args["command"]
-                cmd_snippet = cmd[:50] + ("..." if len(cmd) > 50 else "")
-            yield {"type": "tool", "content": f"Executing {name}" + (f": {cmd_snippet}" if cmd_snippet else " ...")}
-            yield {"type": "status", "value": "tool_run", "content": f"Running: {name}" + (f" {cmd_snippet}" if cmd_snippet else "") + "..."}
-            
+        # Execute each tool block (ALWAYS exactly one per round)
+        for block in tool_blocks[:1]:  # safeguard: only first block
+            name = block["name"]
+            args = block["args"]
+
+            display_line = format_display_for_activity_log(name, args)
+            yield {"type": "tool", "content": display_line}
+            yield {"type": "status", "value": "tool_run", "content": f"Running: {name}..."}
+
             t0 = time.time()
             if name in tool_registry:
                 result = await tool_registry.call(name, args)
@@ -345,23 +269,18 @@ async def stream_chat(messages: List[Dict[str, str]], max_rounds: int = 50) -> A
             else:
                 result = await skill_registry.call(name, args)
             elapsed = time.time() - t0
-            result_summary = str(result)[:60]
-            _debug(f"TOOL RESULT [{name}]: result_len={len(str(result))}, preview={result_summary}, elapsed={elapsed:.2f}s")
-            remaining = max_rounds - round_num
-            round_tag = f"\n\n[Round {round_num}/{max_rounds}"
-            if remaining <= 3:
-                round_tag += " 🛑 CRITICAL — finish now!"
-            elif remaining <= 6:
-                round_tag += f" ⚠️ only {remaining} left"
-            round_tag += "]"
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "name": name,
-                "content": str(result) + round_tag
-            })
-            _debug(f"Appended tool response. messages count now: {len(messages)}")
+            result_str = str(result)
+            _debug(f"TOOL RESULT [{name}]: len={len(result_str)}, elapsed={elapsed:.2f}s")
+
             yield {"type": "status", "value": "tool_done", "content": f"Done: {name} ({elapsed:.1f}s)"}
+
+            # Inject result as a user message (hidden from chat display)
+            result_user_msg = {
+                "role": "user",
+                "content": format_result(name, result_str),
+            }
+            messages.append(result_user_msg)
+            _debug(f"Appended result for '{name}'. messages count: {len(messages)}")
 
         if round_num >= max_rounds:
             yield {"type": "status", "value": "error",

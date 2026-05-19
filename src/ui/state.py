@@ -19,6 +19,7 @@ from src.engine.agents import AgentStep, AgentStreamChunk
 from src.config import settings
 from src.prompts import load_cli_prompts
 from src.engine.agents import agent_registry
+from src.engine.tools import registry as tool_registry
 
 _system_env_cache: Optional[str] = None
 
@@ -217,6 +218,9 @@ def get_system_prompt() -> dict:
     agent_descs = agent_registry.get_descriptions()
     if agent_descs:
         content += f"\n\nAVAILABLE AGENTS:\n{agent_descs}"
+    tool_descs = tool_registry.get_main_agent_text_descriptions()
+    if tool_descs:
+        content += f"\n\n{tool_descs}"
     content += (
         f"\n\nCWD: {os.getcwd()}\n"
         f"Current time: {datetime.now().strftime('%Y-%m-%d %H:00 (%B, %A)')}\n\n"

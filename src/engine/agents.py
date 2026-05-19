@@ -5,7 +5,6 @@ streaming LLM interaction. Depends on: litellm, ToolRegistry (tools.py), setting
 """
 
 import asyncio
-import json
 import logging
 import re
 import time
@@ -13,12 +12,15 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Set, Callable
 
 import litellm
 from src.config import settings
 from src.engine.tools import registry, agent_params_ctx
+from src.engine.tool_parser import (
+    extract_tool_blocks, strip_tool_blocks, is_result_message,
+    format_result, format_display_for_activity_log,
+)
 
 log = logging.getLogger("simplex.engine.agents")
 
@@ -548,8 +550,6 @@ class ToolCapableAgent:
                     api_key=llm_api_key,
                     api_base=llm_api_base,
                     temperature=0.1,
-                    tools=schemas if schemas else None,
-                    tool_choice="auto" if schemas else None,
                     stream=True,
                 )
             except asyncio.CancelledError:
@@ -565,7 +565,6 @@ class ToolCapableAgent:
 
             full_reasoning = ""
             full_content = ""
-            tool_calls_stream: dict[int, dict] = {}
             buf = {"reasoning": "", "content": ""}
             last_emit = 0.0
             try:
@@ -579,21 +578,6 @@ class ToolCapableAgent:
                     if delta.content:
                         full_content += delta.content
                         buf["content"] += delta.content
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            idx = tc.index
-                            if idx not in tool_calls_stream:
-                                tool_calls_stream[idx] = {
-                                    "id": "", "function": {"name": "", "arguments": ""},
-                                }
-                            if tc.id:
-                                tool_calls_stream[idx]["id"] = tc.id
-                            if tc.function:
-                                if tc.function.name:
-                                    tool_calls_stream[idx]["function"]["name"] += tc.function.name
-                                if tc.function.arguments:
-                                    tool_calls_stream[idx]["function"]["arguments"] += tc.function.arguments
-
                     now = time.monotonic()
                     if (buf["reasoning"] or buf["content"]) and (now - last_emit) >= self._COALESCE_SEC:
                         if on_stream:
@@ -620,20 +604,14 @@ class ToolCapableAgent:
                         on_stream(AgentStreamChunk(self.name, round_num, ct, buf[ct]))
 
             reasoning = full_reasoning or ""
-            tc_list = []
-            for idx in sorted(tool_calls_stream.keys()):
-                tc_data = tool_calls_stream[idx]
-                tc_list.append(SimpleNamespace(
-                    id=tc_data["id"],
-                    function=SimpleNamespace(
-                        name=tc_data["function"]["name"],
-                        arguments=tc_data["function"]["arguments"],
-                    ),
-                ))
 
-            has_tool_calls = bool(tc_list)
+            schemas = self._get_allowed_schemas()
+            _known_tools = {s["function"]["name"] for s in schemas}
+
+            tool_blocks = extract_tool_blocks(full_content, _known_tools)
+            has_tool_calls = bool(tool_blocks)
             log.info("│ %s round %d: reasoning=%d chars, content=%d chars, tool_calls=%d",
-                     self.name, round_num, len(full_reasoning), len(full_content), len(tc_list))
+                     self.name, round_num, len(full_reasoning), len(full_content), len(tool_blocks))
 
             if not has_tool_calls:
                 output = full_content or ""
@@ -642,55 +620,23 @@ class ToolCapableAgent:
                     on_step(AgentStep(self.name, round_num, "done", output[:200]))
                 return output
 
-            assistant_msg = {"role": "assistant", "content": full_content or None}
+            safe_content = strip_tool_blocks(full_content, _known_tools)
+            assistant_msg = {"role": "assistant", "content": safe_content or None}
             if reasoning:
                 assistant_msg["reasoning_content"] = reasoning
-
-            formatted_calls = []
-            for tc in tc_list:
-                fmt = {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                formatted_calls.append(fmt)
-            assistant_msg["tool_calls"] = formatted_calls
             self.messages.append(assistant_msg)
 
-            log.info("│ %s round %d: %d tool call(s)", self.name, round_num, len(formatted_calls))
+            log.info("│ %s round %d: %d tool call(s)", self.name, round_num, len(tool_blocks))
             if reasoning:
                 log.info("│ reasoning: %s...", reasoning[:200])
 
-            for tc in formatted_calls:
-                name = tc["function"]["name"]
-                raw_args = tc["function"]["arguments"]
+            for block in tool_blocks[:1]:  # Single tool per round
+                name = block["name"]
+                args = block["args"]
 
                 if on_step:
-                    snippet = raw_args[:200] if name == "bash" else ""
-                    label = f"bash: {snippet}..." if snippet else f"{name}(...)"
+                    label = format_display_for_activity_log(name, args)
                     on_step(AgentStep(self.name, round_num, "tool_call", label))
-
-                try:
-                    args = json.loads(raw_args)
-                except json.JSONDecodeError as e:
-                    remaining = self.max_rounds - round_num
-                    error_msg = (
-                        f"Error: Tool arguments are not valid JSON (position {e.pos}). "
-                        f"String values may contain unescaped quotes or backslashes. "
-                        f"Put document content in files and pass filenames, not inline text."
-                    )
-                    round_tag = f"\n\n[Round {round_num}/{self.max_rounds}"
-                    if remaining <= 3:
-                        round_tag += " 🛑 CRITICAL — finish now!"
-                    elif remaining <= 6:
-                        round_tag += f" ⚠️ only {remaining} left"
-                    round_tag += "]"
-                    self.messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "name": name,
-                        "content": error_msg + round_tag,
-                    })
-                    if on_step:
-                        on_step(AgentStep(self.name, round_num, "tool_result", error_msg[:200]))
-                    log.warning("! JSON decode error for tool '%s': %s (pos=%s)", name, raw_args[:200], e.pos)
-                    continue
 
                 log.info("│   %s → calling %s(args=%s)", self.name, name, args)
                 result = await registry.call(name, args)
@@ -731,10 +677,8 @@ class ToolCapableAgent:
                     round_tag += f" ⚠️ only {remaining} left"
                 round_tag += "]"
                 self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "name": name,
-                    "content": result_str + round_tag,
+                    "role": "user",
+                    "content": format_result(name, result_str) + round_tag,
                 })
 
             if round_num == self.max_rounds and not gave_fallback:
@@ -758,10 +702,11 @@ class ToolCapableAgent:
 
         tool_counts: dict[str, int] = {}
         for m in self.messages:
-            if m["role"] == "assistant" and m.get("tool_calls"):
-                for tc in m["tool_calls"]:
-                    name = tc["function"]["name"]
-                    tool_counts[name] = tool_counts.get(name, 0) + 1
+            if m["role"] == "assistant":
+                content = m.get("content", "") or ""
+                for tool_name in set(self.allowed_tools):
+                    if tool_name in content and f"<{tool_name}>" in content:
+                        tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
 
         tool_summary = ", ".join(f"{k} x{v}" for k, v in tool_counts.items()) or "(none)"
 

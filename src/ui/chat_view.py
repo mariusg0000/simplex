@@ -3,6 +3,8 @@ src/ui/chat_view.py · Chat logic · Message handling, streaming response displa
 """
 
 import asyncio
+import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,9 @@ from src.engine.chat import stream_chat
 from src.engine.tools import registry
 from src.engine.agents import activity_callback, agent_stream_callback
 from src.engine.context import compress_messages
+from src.engine.tool_parser import is_result_message
+
+_TOOL_RESULT_RE = re.compile(r"<result name='([^']+)'>")
 
 
 def _debug(msg: str):
@@ -53,9 +58,16 @@ async def refresh_chat_display():
         last_assistant_tool_calls: list[dict] | None = None
         for msg in dialogue:
             if msg["role"] == "user":
-                with ui.element("div").classes("terminal-user-block"):
-                    ui.label("▸ You:").classes("terminal-user-prefix")
-                    ui.markdown(msg["content"]).classes("terminal-content")
+                content = msg.get("content", "")
+                if is_result_message(content):
+                    # Tool result — show minimal tool indicator
+                    m = _TOOL_RESULT_RE.search(content)
+                    tool_name = m.group(1) if m else "tool"
+                    ui.label(f"▸ tool: {tool_name}").classes("terminal-tool")
+                else:
+                    with ui.element("div").classes("terminal-user-block"):
+                        ui.label("▸ You:").classes("terminal-user-prefix")
+                        ui.markdown(content).classes("terminal-content")
 
             elif msg["role"] == "assistant":
                 last_assistant_tool_calls = msg.get("tool_calls")
@@ -70,7 +82,6 @@ async def refresh_chat_display():
                     for tc in last_assistant_tool_calls:
                         if tc.get("function", {}).get("name") == "bash":
                             try:
-                                import json
                                 args = json.loads(tc["function"].get("arguments", "{}"))
                                 cmd = args.get("command", "")
                                 cmd_snippet = cmd[:50] + ("..." if len(cmd) > 50 else "")
@@ -221,6 +232,7 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
 
         response_container = None
         _reasoning_active = False
+        _assistant_before = sum(1 for m in state.messages if m.get("role") == "assistant")
 
         async for chunk in stream_chat(state.messages):
             if chunk["type"] == "status":
@@ -268,17 +280,31 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
                 response_container.set_content((response_container.content or "") + chunk["content"])
                 state.scroll_area.scroll_to(percent=1.0, duration=0)
 
+            elif chunk["type"] == "content_reset":
+                safe_content = chunk["content"]
+                total_response = safe_content
+                if response_container is None:
+                    with state.chat_content:
+                        response_container = ui.markdown(safe_content).classes("terminal-content")
+                else:
+                    response_container.set_content(safe_content)
+                state.scroll_area.scroll_to(percent=1.0, duration=0)
+
         if thinking_indicator:
             try: thinking_indicator.delete()
             except: pass
 
         state.close_activity_log()
         state.status_label.set_text("Saving to DB...")
-        state.messages.append({
-            "role": "assistant",
-            "content": total_response or None,
-            "reasoning_content": total_reasoning or None
-        })
+
+        # Only append assistant message if stream_chat didn't already append it (tool rounds)
+        _assistant_after = sum(1 for m in state.messages if m.get("role") == "assistant")
+        if _assistant_after == _assistant_before:
+            state.messages.append({
+                "role": "assistant",
+                "content": total_response or None,
+                "reasoning_content": total_reasoning or None
+            })
 
         # Context compression: if context exceeds max_context, compress old messages
         compressed = await compress_messages(state.messages)
@@ -297,11 +323,13 @@ async def _process_response(thinking_indicator: ui.element, sub_agent_callback=N
         _debug("=== _process_response CANCELLED ===")
         # Save partial response before raising
         if total_response or total_reasoning:
-            state.messages.append({
-                "role": "assistant",
-                "content": total_response or None,
-                "reasoning_content": total_reasoning or None
-            })
+            _assistant_after = sum(1 for m in state.messages if m.get("role") == "assistant")
+            if _assistant_after == _assistant_before:
+                state.messages.append({
+                    "role": "assistant",
+                    "content": total_response or None,
+                    "reasoning_content": total_reasoning or None
+                })
             compressed = await compress_messages(state.messages)
             if compressed is not state.messages:
                 state.messages = compressed
