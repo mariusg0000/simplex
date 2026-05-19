@@ -34,13 +34,13 @@ def _read_excel(path: Path) -> str:
 
 def get_description() -> dict:
     return {
-        "description": "Reads the text content of a document. Supports .txt, .md, .pdf, .docx, .xlsx. Use this to understand the content of a file found by search.",
+        "description": "Reads the text content of a document. Supports .txt, .md, .pdf, .docx, .xlsx. Use this to understand the content of a file. Sub-agents MUST use relative filenames (resolved against the session folder). Main agents can use absolute paths.",
         "parameters": {
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "The absolute path to the file.",
+                    "description": "Relative filename (sub-agent) or absolute path (main agent). Sub-agents MUST use relative names only.",
                 },
             },
             "required": ["file_path"],
@@ -48,8 +48,17 @@ def get_description() -> dict:
     }
 
 
-def execute(file_path: str) -> str:
-    path = Path(file_path)
+async def execute(file_path: str, _agent_params: dict = None) -> str:
+    if _agent_params and "work_dir" in _agent_params:
+        if Path(file_path).is_absolute():
+            return (
+                f"Error: sub-agents cannot use absolute paths. "
+                f"Use a relative filename (e.g., 'contract.docx')."
+            )
+        path = Path(_agent_params["work_dir"]) / file_path
+    else:
+        path = Path(file_path)
+
     if not path.exists():
         return f"Error: File not found at {file_path}"
 

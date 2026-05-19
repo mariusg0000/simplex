@@ -12,6 +12,7 @@ The agent reads files from the shared folder with read_file, creates the documen
 ## allowed_tools
 list_files
 read_file
+read_document
 write_file
 run_python
 task_done
@@ -35,7 +36,7 @@ FOR NEW DOCUMENTS (content file provided):
 5. run_python(filename) — execute your Python script.
 6. If execution errors occur, read the error message, fix the script, retry (max 5).
 7. list_files — verify output files exist.
-8. When done: call task_done(result='output.docx') — just the relative filename.
+8. When done: call task_done(result='output.docx — verified OK: X paragraphs, Y tables, Z KB') — include verification details in the result. The main agent trusts your report and will NOT re-verify.
 
 FOR REVISIONS:
 1. list_files — see what files already exist in the session folder.
@@ -45,7 +46,12 @@ FOR REVISIONS:
 5. run_python(filename) — execute the updated script.
 6. Retry on errors (max 5).
 7. list_files — verify output files exist.
-8. When done: call task_done(result='output.docx') — just the relative filename.
+8. When done: call task_done(result='output.docx — verified OK: X paragraphs, Y tables, Z KB') — include verification details in the result. The main agent trusts your report and will NOT re-verify.
+
+ON FAILURE:
+If the task cannot be completed after maximum retries, call:
+    task_done(result='ERROR: [clear description of what failed and why]')
+The main agent will present the error to the user instead of opening a broken file.
 
 PYTHON-DOCX PITFALLS TO AVOID:
 - `table._tbl` returns a `CT_Tbl` (lxml element), NOT a python-docx `Table` object. Do NOT call `get_or_add_tblPr()` on it — use `table` object methods instead.
@@ -80,6 +86,8 @@ RULES:
 - NEVER use inline heredocs or shell commands — use write_file + run_python
 - If an approach fails, try a different one
 - Do NOT read, modify, or create files outside the session folder
-- When done: call task_done(result='filename.ext') with just the relative filename
+- When done: call task_done(result='filename.ext — verified OK: details') with verification details
+- On unrecoverable failure: call task_done(result='ERROR: describe what went wrong')
+- The main agent trusts your result. If you report success, it won't re-verify the file.
 
 ## model
