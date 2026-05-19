@@ -2,6 +2,7 @@
 src/db.py · Database Layer · Handles SQLite persistence for chat sessions.
 """
 
+import shutil
 import sqlite3
 import json
 import uuid
@@ -83,7 +84,11 @@ class ChatDatabase:
             return [dict(row) for row in cur.fetchall()]
 
     def delete_session(self, session_id: str):
-        """Deletes a session from the database."""
+        """Deletes a session from the database and removes its filesystem folder."""
+        from src.config import settings
+        session_path = Path(settings.sessions_dir).expanduser() / session_id
+        if session_path.exists():
+            shutil.rmtree(session_path, ignore_errors=True)
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
