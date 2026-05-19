@@ -200,12 +200,28 @@ async def execute(image_path: str, request: str, _agent_params: dict = None) -> 
     if not text or not text.strip():
         return "Error: vision model returned an empty response."
 
-    # Parse JSON response, fallback to plain text
-    try:
-        parsed = json.loads(text)
-        short = parsed.get("short_description", "").strip()
-        full = parsed.get("full_description", "").strip()
-    except (json.JSONDecodeError, TypeError):
+    # Extract JSON from response (handle markdown code fences)
+    def _extract_json(raw: str) -> dict:
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            if m:
+                try:
+                    return json.loads(m.group())
+                except json.JSONDecodeError:
+                    pass
+        return {}
+
+    parsed = _extract_json(text)
+    if parsed.get("short_description") and parsed.get("full_description"):
+        short = parsed["short_description"].strip()
+        full = parsed["full_description"].strip()
+    else:
         short = ""
         full = text.strip()
 
