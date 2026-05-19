@@ -281,7 +281,7 @@ class ToolRegistry:
         lines = [
             "## AVAILABLE TOOLS",
             "",
-            "Use XML format to invoke tools:",
+            "Call tools with XML blocks:",
             "<tool_name>",
             "  <param_name>value</param_name>",
             "</tool_name>",
@@ -296,17 +296,17 @@ class ToolRegistry:
             required = set(fn.get("parameters", {}).get("required", []))
 
             if params:
-                param_str = ", ".join(params.keys())
-                lines.append(f"• {name}({param_str}) — {desc}")
+                lines.append(f"• {name} — {desc}")
                 for pname, pinfo in params.items():
                     req = " (required)" if pname in required else ""
-                    lines.append(f"  {pname}: {pinfo.get('description', '')}{req}")
+                    pdesc = pinfo.get("description", "")
+                    lines.append(f"  <{pname}>{req} — {pdesc}")
             else:
-                lines.append(f"• {name}() — {desc}")
+                lines.append(f"• {name} — {desc}")
 
         lines.append("")
         lines.append("IMPORTANT: Return ONLY ONE tool block per response.")
-        lines.append("Output the XML block without any surrounding explanation or markdown fences.")
+        lines.append("Output the XML block without surrounding explanation or markdown fences.")
         return "\n".join(lines)
 
     async def call(self, name: str, arguments: Dict[str, Any]) -> str:
